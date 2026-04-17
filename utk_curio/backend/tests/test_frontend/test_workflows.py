@@ -3,11 +3,20 @@ import re
 import json
 import time
 
+# from .utils import (
+    # save_workflow_test_screenshot,
+    # get_shared_data_dir,
+    # load_dot_data,
+    # strip_volatile_keys,
+    # execute_workflow_programmatically,
+    # dot_data_to_vega_values,
+    # save_expected_svg,
+    # compare_svg_structure,
+# )
 from .utils import (
     save_workflow_test_screenshot,
     get_shared_data_dir,
-    load_dot_data,
-    strip_volatile_keys,
+    load_artifact_as_dict,
     execute_workflow_programmatically,
     dot_data_to_vega_values,
     save_expected_svg,
@@ -509,8 +518,11 @@ class TestWorkflowCanvas:
                     # Test the output tab pane content.
                     # ------------------------------------------------------------------------
                     # it should be a text with the output file path following the pattern: <uuid_regex>.data
+                    # output_content = tab_content.locator("div").filter(
+                    #     has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
+                    # )
                     output_content = tab_content.locator("div").filter(
-                        has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
+                        has_text=re.compile(r"Saved to file\:\s\S+$")
                     )
                     output_content.first.wait_for(state="visible", timeout=10000)
                     assert output_content.count() >= 1, (
@@ -519,37 +531,68 @@ class TestWorkflowCanvas:
                     )
 
                     # Verify .data file content against programmatic execution
-                    data_file_name = output_content.first.evaluate(
+                    # data_file_name = output_content.first.evaluate(
+                    #     r"""(el) => {
+                    #         const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
+                    #         return match ? match[1] : null;
+                    #     }"""
+                    # )
+                    # assert data_file_name is not None, (
+                    #     f"Node {node.id} ({node.type}) is missing its data file path"
+                    # )
+
+                    # data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
+                    # assert os.path.exists(data_file_path), (
+                    #     f"Node {node.id} ({node.type}) is missing its data file"
+                    # )
+
+                    # if node.id in expected_map:
+                    #     actual = strip_volatile_keys(load_dot_data(data_file_path))
+                    #     expected = strip_volatile_keys(
+                    #         load_dot_data(expected_map[node.id])
+                    #     )
+                    #     if actual != expected:
+                    #         diff_keys = [
+                    #             k for k in set(actual) | set(expected)
+                    #             if actual.get(k) != expected.get(k)
+                    #         ]
+                    #         raise AssertionError(
+                    #             f"Node {node.id} ({node.type}) data file content "
+                    #             f"does not match the programmatic execution. "
+                    #             f"Differing top-level keys: {diff_keys}"
+                    #         )
+                    artifact_id = output_content.first.evaluate(
                         r"""(el) => {
-                            const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
+                            const match = el.textContent.match(/Saved to file:\s(\S+)$/);
                             return match ? match[1] : null;
                         }"""
                     )
-                    assert data_file_name is not None, (
-                        f"Node {node.id} ({node.type}) is missing its data file path"
+                    assert artifact_id is not None, (
+                        f"Node {node.id} ({node.type}) is missing its artifact id"
                     )
-
-                    data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
-                    assert os.path.exists(data_file_path), (
-                        f"Node {node.id} ({node.type}) is missing its data file"
-                    )
-
+                    # The old test checked that a .data file exists on disk.  With DuckDB
+                    # there's no per-artifact file — successful load from the artifacts
+                    # table IS the existence proof.
                     if node.id in expected_map:
-                        actual = strip_volatile_keys(load_dot_data(data_file_path))
-                        expected = strip_volatile_keys(
-                            load_dot_data(expected_map[node.id])
-                        )
+                        try:
+                            actual = load_artifact_as_dict(artifact_id)
+                            expected = load_artifact_as_dict(expected_map[node.id])
+                        except Exception as e:
+                            raise AssertionError(
+                                f"Node {node.id} ({node.type}) could not load artifact "
+                                f"from DuckDB: {e}"
+                            )
+
                         if actual != expected:
                             diff_keys = [
                                 k for k in set(actual) | set(expected)
                                 if actual.get(k) != expected.get(k)
                             ]
                             raise AssertionError(
-                                f"Node {node.id} ({node.type}) data file content "
+                                f"Node {node.id} ({node.type}) artifact content "
                                 f"does not match the programmatic execution. "
                                 f"Differing top-level keys: {diff_keys}"
                             )
-                
                 
                 
                 # ----------------------------------------------------------
@@ -584,8 +627,14 @@ class TestWorkflowCanvas:
                                 (p for p in parents if p not in visited),
                                 None,
                             )
+                        # if candidate and candidate in expected_map:
+                        #     upstream_data = load_dot_data(
+                        #         expected_map[candidate]
+                        #     )
+                        #     vega_values = dot_data_to_vega_values(upstream_data)
+                        #     break
                         if candidate and candidate in expected_map:
-                            upstream_data = load_dot_data(
+                            upstream_data = load_artifact_as_dict(
                                 expected_map[candidate]
                             )
                             vega_values = dot_data_to_vega_values(upstream_data)

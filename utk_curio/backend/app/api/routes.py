@@ -20,6 +20,9 @@ from openai import OpenAI
 # The Flask app
 from utk_curio.backend.app.api import bp
 
+#DuckDB parsers
+from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
+
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', 'localhost')
 api_port=int(os.getenv('FLASK_SANDBOX_PORT', 2000))
@@ -260,6 +263,28 @@ def transform_to_vega(data):
 
     return data
 
+#DuckDB get file
+@bp.route('/get', methods=['GET'])
+def get_file():
+    file_name = request.args.get('fileName')
+    vega = request.args.get('vega', 'false').lower() == 'true'
+
+    if not file_name:
+        return 'No artifact id specified', 400
+
+    try:
+        t0 = time.perf_counter()
+        raw = load_from_duckdb(file_name)
+        data = parseOutput(raw)
+        if vega:
+            data = transform_to_vega(data)
+        print(f"[/get] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
+        return jsonify(data), 200
+    except Exception as e:
+        return f'Error loading artifact: {str(e)}', 500
+
+#Serialization get file
+'''
 @bp.route('/get', methods=['GET'])
 def get_file():
     file_name = request.args.get('fileName')
@@ -300,50 +325,90 @@ def get_file():
 
     except Exception as e:
         return f'Error loading file: {str(e)}', 500
+'''
 
+#DuckDB get file preview
 @bp.route('/get-preview', methods=['GET'])
 def get_file_preview():
     """
-    Get first 100 rows + metadata for DataPool display optimization.
-    Similar to /get but returns limited data to reduce transfer overhead.
+    Get first N rows + metadata for DataPool display optimization.
+    Similar to /get but truncates the DataFrame/GeoDataFrame before
+    converting to JSON, so large artifacts stay cheap to preview.
     """
     file_name = request.args.get('fileName')
-    
+
     if not file_name:
-        return 'No file name specified', 400
-    
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
-    base_path = Path(launch_dir) / shared_disk_path
-    base_path = base_path.resolve()
+        return 'No artifact id specified', 400
 
-    requested_path = Path(file_name)
-    full_path = (base_path / requested_path).resolve()
-
-    if not str(full_path).startswith(str(base_path)):
-        return 'Invalid file path: %s'%full_path, 403
-
-    if not full_path.exists():
-        return 'File does not exist: %s'%full_path, 404
+    max_rows = 100
 
     try:
-        # Using mmap for efficient memory-mapped loading
-        with open(full_path, "rb") as file:
-            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
-                # Decompress and decode directly from the memory-mapped file
-                decompressed_data = zlib.decompress(mmapped_file[:])
-                data = json.loads(decompressed_data.decode('utf-8'))
+        t0 = time.perf_counter()
+        raw = load_from_duckdb(file_name)
 
-                if isinstance(data, str):
-                    data = json.loads(data)
-                
-                # Create preview version with limited rows
-                preview_data = create_preview_data(data)
-                
-                return jsonify(preview_data)
+        total_rows = None
+        # gpd.GeoDataFrame is a subclass of pd.DataFrame, so this catches both
+        if isinstance(raw, pd.DataFrame):
+            total_rows = len(raw)
+            raw = raw.head(max_rows)
+
+        data = parseOutput(raw)
+
+        if total_rows is not None:
+            data['preview'] = True
+            data['previewRows'] = min(max_rows, total_rows)
+            data['totalRows'] = total_rows
+
+        print(f"[/get-preview] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
+        return jsonify(data), 200
 
     except Exception as e:
         return f'Error loading preview: {str(e)}', 500
+
+#Serialization get file preview
+# @bp.route('/get-preview', methods=['GET'])
+# def get_file_preview():
+#     """
+#     Get first 100 rows + metadata for DataPool display optimization.
+#     Similar to /get but returns limited data to reduce transfer overhead.
+#     """
+#     file_name = request.args.get('fileName')
+    
+#     if not file_name:
+#         return 'No file name specified', 400
+    
+#     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+#     shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+#     base_path = Path(launch_dir) / shared_disk_path
+#     base_path = base_path.resolve()
+
+#     requested_path = Path(file_name)
+#     full_path = (base_path / requested_path).resolve()
+
+#     if not str(full_path).startswith(str(base_path)):
+#         return 'Invalid file path: %s'%full_path, 403
+
+#     if not full_path.exists():
+#         return 'File does not exist: %s'%full_path, 404
+
+#     try:
+#         # Using mmap for efficient memory-mapped loading
+#         with open(full_path, "rb") as file:
+#             with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+#                 # Decompress and decode directly from the memory-mapped file
+#                 decompressed_data = zlib.decompress(mmapped_file[:])
+#                 data = json.loads(decompressed_data.decode('utf-8'))
+
+#                 if isinstance(data, str):
+#                     data = json.loads(data)
+                
+#                 # Create preview version with limited rows
+#                 preview_data = create_preview_data(data)
+                
+#                 return jsonify(preview_data)
+
+#     except Exception as e:
+#         return f'Error loading preview: {str(e)}', 500
 
 def create_preview_data(data, max_rows=100):
     """

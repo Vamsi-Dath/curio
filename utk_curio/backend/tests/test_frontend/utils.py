@@ -2,7 +2,7 @@ import os
 import re
 import json
 import time
-import zlib
+# import zlib
 import shutil
 import textwrap
 from pathlib import Path
@@ -26,13 +26,15 @@ WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
 
 
 def get_shared_data_dir() -> str:
-    """Directory where ``save_memory_mapped_file`` writes ``.data`` blobs.
+    """Directory where Curio writes its DuckDB artifact store.
 
-    Matches ``utk_curio/sandbox/util/parsers.py`` (``CURIO_LAUNCH_CWD`` +
+    Matches ``utk_curio/sandbox/util/db.py`` (``CURIO_LAUNCH_CWD`` +
     ``CURIO_SHARED_DATA``). Defaults ``CURIO_LAUNCH_CWD`` to the repo root
     so host-side Playwright resolves the same path as ``curio start`` when the
     subprocess uses ``cwd`` = repo root (and matches Docker once ``./.curio`` is
     bind-mounted to ``/app/.curio``).
+
+    The directory holds ``curio_data.duckdb``;
     """
     launch_dir = Path(
         os.environ.get("CURIO_LAUNCH_CWD", REPO_ROOT)
@@ -46,25 +48,40 @@ def get_shared_data_dir() -> str:
 # .data file helpers (zlib-compressed JSON, same format as parsers.py)
 # ---------------------------------------------------------------------------
 
-def load_dot_data(path: str) -> dict:
-    """Read a ``.data`` file (zlib-compressed JSON) and return the parsed dict."""
-    with open(path, "rb") as f:
-        return json.loads(zlib.decompress(f.read()).decode("utf-8"))
+# def load_dot_data(path: str) -> dict:
+#     """Read a ``.data`` file (zlib-compressed JSON) and return the parsed dict."""
+#     with open(path, "rb") as f:
+#         return json.loads(zlib.decompress(f.read()).decode("utf-8"))
 
 
-def save_dot_data(path: str, data: dict) -> None:
-    """Write *data* as zlib-compressed JSON to *path*."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    compressed = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
-    with open(path, "wb") as f:
-        f.write(compressed)
+# def save_dot_data(path: str, data: dict) -> None:
+#     """Write *data* as zlib-compressed JSON to *path*."""
+#     os.makedirs(os.path.dirname(path), exist_ok=True)
+#     compressed = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
+#     with open(path, "wb") as f:
+#         f.write(compressed)
 
 
-def strip_volatile_keys(data: dict) -> dict:
-    """Return a shallow copy of *data* without per-run metadata (``filename``)."""
-    stripped = {**data}
-    stripped.pop("filename", None)
-    return stripped
+# def strip_volatile_keys(data: dict) -> dict:
+#     """Return a shallow copy of *data* without per-run metadata (``filename``)."""
+#     stripped = {**data}
+#     stripped.pop("filename", None)
+#     return stripped
+
+# ---------------------------------------------------------------------------
+# DuckDB artifact helpers
+# ---------------------------------------------------------------------------
+
+def load_artifact_as_dict(artifact_id: str) -> dict:
+    """Load a DuckDB artifact and return it in the ``{dataType, data}`` dict
+    shape produced by ``parseOutput``.
+
+    Drop-in replacement for the old ``load_dot_data(path)`` — same shape of
+    return value, just sourced from the ``artifacts`` table instead of a
+    zlib-compressed ``.data`` file.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
+    return parseOutput(load_from_duckdb(artifact_id))
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +261,10 @@ def compare_svg_structure(
 def _ensure_parsers_env():
     """Ensure ``CURIO_LAUNCH_CWD`` and ``CURIO_SHARED_DATA`` are set.
 
-    ``save_memory_mapped_file`` uses ``CURIO_SHARED_DATA`` with
-    ``Path.relative_to`` and requires an absolute path.  When the test
-    process is *not* started via ``curio start`` (e.g. ``CURIO_E2E_USE_EXISTING``
-    in CI) these variables may be absent.
+    ``get_db_path`` in ``utk_curio/sandbox/util/db.py`` reads these to
+    resolve the path to ``curio_data.duckdb``.  When the test process is
+    *not* started via ``curio start`` (e.g. ``CURIO_E2E_USE_EXISTING`` in
+    CI) these variables may be absent, so we default them here.
     """
     if "CURIO_LAUNCH_CWD" not in os.environ:
         os.environ["CURIO_LAUNCH_CWD"] = REPO_ROOT
@@ -256,16 +273,16 @@ def _ensure_parsers_env():
             Path(os.path.join(REPO_ROOT, ".curio", "data")).resolve()
         )
 
-
+"""
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
-    """Execute every code node in-process and return *{node_id: expected_path}*.
+    #Execute every code node in-process and return *{node_id: expected_path}*.
 
-    Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream data,
-    call user code, serialise via ``parseOutput`` / ``save_memory_mapped_file``
-    — but runs entirely inside the test process.  Results are copied to
-    ``.curio/playwright/expected/<workflow>/`` for later comparison with the
-    browser-produced ``.data`` files.
-    """
+    # Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream data,
+    # call user code, serialise via ``parseOutput`` / ``save_memory_mapped_file``
+    # — but runs entirely inside the test process.  Results are copied to
+    # ``.curio/playwright/expected/<workflow>/`` for later comparison with the
+    # browser-produced ``.data`` files.
+    #
     _ensure_parsers_env()
 
     from utk_curio.sandbox.util.parsers import (
@@ -355,6 +372,111 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
                 gt_path,
             )
             expected[node.id] = gt_path
+    finally:
+        os.chdir(original_cwd)
+
+    return expected
+"""
+
+def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
+    """Execute every code node in-process and return *{node_id: duckdb_artifact_id}*.
+
+    Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream inputs
+    from DuckDB, call user code, save the raw result back to DuckDB —
+    but runs entirely inside the test process.  The returned mapping is
+    later used by Playwright tests to compare the browser-produced
+    artifact with the programmatically-produced one.
+    """
+    _ensure_parsers_env()
+
+    from utk_curio.sandbox.util.parsers import (
+        load_from_duckdb,
+        save_to_duckdb,
+        detect_kind,
+        checkIOType,
+    )
+
+    outputs: dict[str, dict] = {}   # node_id → {"path": <id>, "dataType": ...}
+    expected: dict[str, str] = {}   # node_id → duckdb artifact id
+
+    # User code uses relative paths (e.g. "docs/examples/data/…") that are
+    # resolved from the repo root — the same CWD the sandbox uses via
+    # CURIO_LAUNCH_CWD.  Switch CWD for the duration of execution.
+    original_cwd = os.getcwd()
+    os.chdir(REPO_ROOT)
+    try:
+        for node in spec.topo_sorted_nodes():
+            # Non-code nodes: propagate upstream output without execution
+            if node.category != "code":
+                upstreams = spec.upstream_nodes(node.id)
+                if len(upstreams) == 1 and upstreams[0] in outputs:
+                    outputs[node.id] = outputs[upstreams[0]]
+                elif len(upstreams) > 1:
+                    outputs[node.id] = {
+                        "path": [outputs[uid] for uid in upstreams if uid in outputs],
+                        "dataType": "outputs",
+                    }
+                continue
+
+            # --- resolve input (mirrors python_wrapper.txt) ---
+            upstreams = spec.upstream_nodes(node.id)
+            if not upstreams:
+                incoming = ""
+            elif len(upstreams) == 1:
+                up = outputs[upstreams[0]]
+                if up.get("dataType") == "outputs":
+                    incoming = [load_from_duckdb(elem["path"]) for elem in up["path"]]
+                else:
+                    incoming = load_from_duckdb(up["path"])
+            else:
+                incoming = [load_from_duckdb(outputs[uid]["path"]) for uid in upstreams]
+
+            # Validate input shape via a synthetic dict (same trick as the wrapper)
+            if incoming != "":
+                if isinstance(incoming, list):
+                    synthetic_in = {
+                        "dataType": "outputs",
+                        "data": [{"dataType": detect_kind(v), "data": None} for v in incoming],
+                    }
+                else:
+                    synthetic_in = {"dataType": detect_kind(incoming), "data": None}
+                checkIOType(synthetic_in, node.type)
+
+            # --- exec seeded user code ---
+            resolved = resolve_widget_placeholders(node.content)
+            seeded = seed_node_code(resolved, seed)
+
+            # Provide the same top-level imports as python_wrapper.txt
+            import warnings as _w; _w.filterwarnings("ignore")
+            import rasterio, geopandas, pandas, mmap, hashlib, ast  # noqa: F811
+            ns: dict = {
+                "warnings": _w, "rasterio": rasterio,
+                "gpd": geopandas, "geopandas": geopandas,
+                "pd": pandas, "pandas": pandas,
+                "json": json, "mmap": mmap, "os": os,
+                "time": time, "hashlib": hashlib, "ast": ast,
+            }
+            exec(
+                "def userCode(arg):\n" + textwrap.indent(seeded, "    "),
+                ns,
+            )
+            result = ns["userCode"](incoming)
+
+            # --- validate & persist (same as wrapper) ---
+            out_kind = detect_kind(result)
+            if out_kind == "outputs":
+                synthetic_out = {
+                    "dataType": "outputs",
+                    "data": [{"dataType": detect_kind(v), "data": None} for v in result],
+                }
+            else:
+                synthetic_out = {"dataType": out_kind, "data": None}
+            checkIOType(synthetic_out, node.type, False)
+
+            artifact_id = save_to_duckdb(result, node_id=node.type)
+
+            outputs[node.id] = {"path": artifact_id, "dataType": out_kind}
+            expected[node.id] = artifact_id
     finally:
         os.chdir(original_cwd)
 
