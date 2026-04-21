@@ -106,27 +106,26 @@ class TestWorkflowCanvas:
             # # wait for loading spinner to disappear
             # loading_spinner.wait_for(state="hidden", timeout=10000)
 
-            # Wait until either "Done" or "Error" is visible
-            node_el.locator("span").filter(
+            # Wait until either "Done" or "Error" is visible, then fail fast on Error
+            result_span = node_el.locator("span").filter(
                 has_text=re.compile(r"^(Done|Error)$")
-            ).first.wait_for(state="visible", timeout=1000000)
-
-            # Wait for the execution outcome (up to 30 s)
-            done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
-            error_span = node_el.locator("span").filter(has_text=re.compile(r"^Error$"))
-            done_span.first.wait_for(state="visible", timeout=1000000)
-
-            assert done_span.count() >= 1, (
-                f"Node {node.id} ({node.type}) did not produce 'Done' — "
-                f"error visible: {error_span.is_visible()}"
+            ).first
+            result_span.wait_for(state="visible", timeout=120000)
+            result_text = result_span.text_content() or ""
+            assert "Error" not in result_text, (
+                f"Node {node.id} ({node.type}) execution failed with Error"
             )
-            # Check if output tab is active
+
+            done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
+            assert done_span.count() >= 1, (
+                f"Node {node.id} ({node.type}) did not produce 'Done'"
+            )
 
             # wait for output tab to be visible
             output_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="output"]'
             )
-            output_tab.first.wait_for(state="visible", timeout=100000)
+            output_tab.first.wait_for(state="visible", timeout=10000)
             assert output_tab.count() >= 1, (
                 f"Code node {node.id} ({node.type}) is missing its "
                 f"output tab"
