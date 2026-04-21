@@ -7,7 +7,7 @@
  * and connection logic.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Node, Edge, NodeChange, NodeRemoveChange, Connection, useReactFlow } from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
@@ -84,10 +84,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Trill / Data Operations
     // ---------------------------------------------------------------------------
 
-    const updateDataNode = (nodeId: string, newData: any) => {
+    const updateDataNode = useCallback((nodeId: string, newData: any) => {
         console.log("updateDataNode");
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
-    }
+    }, [setNodes]);
 
     const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean) => {
         if (!merge) {
@@ -148,10 +148,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         });
     }
 
-    const updateDefaultCode = (nodeId: string, content: string) => {
+    const updateDefaultCode = useCallback((nodeId: string, content: string) => {
         console.log("updateDefaultCode");
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, (data: any) => ({ ...data, defaultCode: content })));
-    }
+    }, [setNodes]);
 
     // Given a trill specification update the keywords property of the associated nodes
     const updateKeywords = (trill_spec: any) => {
@@ -218,7 +218,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setSuggestionsLeft(0);
     }
 
-    const applyRemoveChanges = (changes: NodeRemoveChange[]) => {
+    const applyRemoveChanges = useCallback((changes: NodeRemoveChange[]) => {
         let allowedChanges: NodeRemoveChange[] = [];
 
         let edges = reactFlow.getEdges();
@@ -245,7 +245,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
-    };
+    }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
 
     // ---------------------------------------------------------------------------
     // Suggestion Management
@@ -295,7 +295,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }
 
     // Accept the suggestion for adding a specific node
-    const acceptSuggestion = (nodeId: string) => {
+    const acceptSuggestion = useCallback((nodeId: string) => {
         console.log("acceptSuggestion");
         setNodes((prevNodes: Node[]) => {
             let acceptedConnectionSuggestion = false;
@@ -348,7 +348,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
             return filteredNodes;
         });
-    }
+    }, [setNodes, setEdges, newNode, workflowNameRef]);
 
     // If keywordIndex is undefined all components are unflagged
     const flagBasedOnKeyword = (keywordIndex?: number) => {

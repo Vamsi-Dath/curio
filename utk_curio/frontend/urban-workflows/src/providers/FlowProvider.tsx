@@ -4,6 +4,7 @@ import React, {
     useContext,
     ReactNode,
     useCallback,
+    useMemo,
     useRef,
     useEffect,
 } from "react";
@@ -95,6 +96,41 @@ interface FlowContextProps {
     updateKeywords: (trill: any) => void;
 }
 
+// Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
+export interface NodeActionsContextProps {
+    workflowNameRef: React.MutableRefObject<string>;
+    workflowName: string;
+    applyRemoveChanges: (changes: any[]) => void;
+    setPinForDashboard: (nodeId: string, value: boolean) => void;
+    allMinimized: number;
+    setAllMinimized: (value: number) => void;
+    expandStatus: 'expanded' | 'minimized';
+    setExpandStatus: (value: 'expanded' | 'minimized') => void;
+    updateDataNode: (nodeId: string, newData: any) => void;
+    updateDefaultCode: (nodeId: string, content: string) => void;
+    workflowGoal: string;
+    acceptSuggestion: (nodeId: string) => void;
+    setWorkflowName: (name: string) => void;
+}
+
+export const NodeActionsContext = createContext<NodeActionsContextProps>({
+    workflowNameRef: { current: "" },
+    workflowName: "DefaultWorkflow",
+    applyRemoveChanges: () => {},
+    setPinForDashboard: () => {},
+    allMinimized: 0,
+    setAllMinimized: () => {},
+    expandStatus: 'expanded',
+    setExpandStatus: () => {},
+    updateDataNode: () => {},
+    updateDefaultCode: () => {},
+    workflowGoal: "",
+    acceptSuggestion: () => {},
+    setWorkflowName: () => {},
+});
+
+export const useNodeActionsContext = () => useContext(NodeActionsContext);
+
 export const FlowContext = createContext<FlowContextProps>({
     nodes: [],
     edges: [],
@@ -149,18 +185,14 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
 
-    const [positionsInDashboard, _setPositionsInDashboard] = useState<any>({}); // [nodeId] -> change
-    const positionsInDashboardRef = useRef(positionsInDashboard);
+    const positionsInDashboardRef = useRef<any>({});
     const setPositionsInDashboard = (data: any) => {
-        positionsInDashboardRef.current = data;
-        _setPositionsInDashboard(data);
+        positionsInDashboardRef.current = typeof data === 'function' ? data(positionsInDashboardRef.current) : data;
     };
 
-    const [positionsInWorkflow, _setPositionsInWorkflow] = useState<any>({}); // [nodeId] -> change
-    const positionsInWorkflowRef = useRef(positionsInWorkflow);
+    const positionsInWorkflowRef = useRef<any>({});
     const setPositionsInWorkflow = (data: any) => {
-        positionsInWorkflowRef.current = data;
-        _setPositionsInWorkflow(data);
+        positionsInWorkflowRef.current = typeof data === 'function' ? data(positionsInWorkflowRef.current) : data;
     };
 
     const reactFlow = useReactFlow();
@@ -171,10 +203,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const [workflowName, _setWorkflowName] = useState<string>("DefaultWorkflow");
     const workflowNameRef = React.useRef(workflowName);
-    const setWorkflowName = (data: any) => {
+    const setWorkflowName = useCallback((data: any) => {
         workflowNameRef.current = data;
         _setWorkflowName(data);
-    };
+    }, []);
 
     const initializeProvenance = async () => {
         setLoading(true);
@@ -252,23 +284,17 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         }
     };
 
-    const updatePositionWorkflow = (nodeId: string, change: any) => {
-        setPositionsInWorkflow((prev: any) => ({
-            ...prev,
-            [nodeId]: change
-        }));
-    };
+    const updatePositionWorkflow = useCallback((nodeId: string, change: any) => {
+        positionsInWorkflowRef.current = { ...positionsInWorkflowRef.current, [nodeId]: change };
+    }, []);
 
-    const updatePositionDashboard = (nodeId: string, position: { x: number; y: number }) => {
-        setPositionsInDashboard((prev: any) => ({
-            ...prev,
-            [nodeId]: position
-        }));
-    };
+    const updatePositionDashboard = useCallback((nodeId: string, position: { x: number; y: number }) => {
+        positionsInDashboardRef.current = { ...positionsInDashboardRef.current, [nodeId]: position };
+    }, []);
 
-    const setPinForDashboard = (nodeId: string, value: boolean) => {
+    const setPinForDashboard = useCallback((nodeId: string, value: boolean) => {
         setDashboardPins((prev: any) => ({ ...prev, [nodeId]: value }));
-    };
+    }, [setDashboardPins]);
 
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
@@ -778,7 +804,38 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         onConnect, addNode,
     });
 
+    const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
+        workflowNameRef,
+        workflowName,
+        applyRemoveChanges: workflowOps.applyRemoveChanges,
+        setPinForDashboard,
+        allMinimized: workflowOps.allMinimized,
+        setAllMinimized: workflowOps.setAllMinimized,
+        expandStatus: workflowOps.expandStatus,
+        setExpandStatus: workflowOps.setExpandStatus,
+        updateDataNode: workflowOps.updateDataNode,
+        updateDefaultCode: workflowOps.updateDefaultCode,
+        workflowGoal: workflowOps.workflowGoal,
+        acceptSuggestion: workflowOps.acceptSuggestion,
+        setWorkflowName,
+    }), [
+        workflowNameRef,
+        workflowName,
+        workflowOps.applyRemoveChanges,
+        setPinForDashboard,
+        workflowOps.allMinimized,
+        workflowOps.setAllMinimized,
+        workflowOps.expandStatus,
+        workflowOps.setExpandStatus,
+        workflowOps.updateDataNode,
+        workflowOps.updateDefaultCode,
+        workflowOps.workflowGoal,
+        workflowOps.acceptSuggestion,
+        setWorkflowName,
+    ]);
+
     return (
+        <NodeActionsContext.Provider value={nodeActionsValue}>
         <FlowContext.Provider
             value={{
                 nodes,
@@ -811,6 +868,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
         >
             {children}
         </FlowContext.Provider>
+        </NodeActionsContext.Provider>
     );
 };
 

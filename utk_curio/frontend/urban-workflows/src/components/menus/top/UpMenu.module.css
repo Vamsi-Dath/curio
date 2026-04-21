@@ -14,7 +14,7 @@
   margin-left: 15px;
   max-height: 100%;
   width: auto;
-  filter: brightness(0) invert(1);
+  /* filter: brightness(0) invert(1); */
 }
 
 .menuBar {
@@ -28,7 +28,7 @@
   padding: 10px;
   font-family: Rubik;
   z-index: 100;
-  box-shadow: 0 6px 8px -4px rgba(0, 0, 0, 0.25);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .button {

@@ -2,8 +2,8 @@ import React, { ReactNode, useState, useEffect } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
-import { useFlowContext } from "../providers/FlowProvider";
-import { NodeRemoveChange } from "reactflow";
+import { useNodeActionsContext } from "../providers/FlowProvider";
+import { NodeRemoveChange, useReactFlow } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
 import { useRightClickMenu } from "../hook/useRightClickMenu";
@@ -105,8 +105,6 @@ export const NodeContainer = ({
 }) => {
     const { showToast } = useToastContext();
     const {
-        nodes,
-        edges,
         workflowNameRef,
         applyRemoveChanges,
         setPinForDashboard,
@@ -116,7 +114,8 @@ export const NodeContainer = ({
         updateDefaultCode,
         workflowGoal,
         acceptSuggestion
-    } = useFlowContext();
+    } = useNodeActionsContext();
+    const { getNodes, getEdges } = useReactFlow();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
@@ -425,7 +424,7 @@ export const NodeContainer = ({
 
     const clickGenerateContentNode = () => {
         setCurrentEventPipeline("Generate content for node");
-        generateContentNode(nodes, edges, workflowNameRef, goal, workflowGoal);
+        generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
     }
 
     const nodeIconTranslation = (nodeType: NodeType) => {
@@ -528,7 +527,7 @@ export const NodeContainer = ({
                     icon={faCirclePlus} 
                     onClick={() => {
                         if(AIModeRef.current)
-                            generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "input")
+                            generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "input")
                     }} /> : null
             }
 
@@ -554,7 +553,7 @@ export const NodeContainer = ({
             {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
                 <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {
                     if(AIModeRef.current)
-                        generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "output")
+                        generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "output")
                 }} /> : null
             }
 
@@ -953,13 +952,13 @@ export const NodeContainer = ({
                         ...{
                             width: currentNodeWidth + "px",
                             height: currentNodeHeight + "px",
-                            backgroundColor: "white",
-                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+                            backgroundColor: "#ffffff",
                             borderRadius: "10px",
                             padding: "5px",
                             justifyContent: "center",
                             display: "flex",
                             alignItems: "center",
+                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
@@ -1043,11 +1042,11 @@ const nodeTypeBorderColor: Record<string, string> = {
 
 const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     position: "relative",
-    backgroundColor: "white",
-    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+    backgroundColor: "#ffffff",
+    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
     borderRadius: "10px",
     padding: "5px",
-    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
+    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
 });
 
 export const RightClickMenu = ({

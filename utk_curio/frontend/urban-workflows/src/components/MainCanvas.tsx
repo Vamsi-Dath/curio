@@ -1,9 +1,9 @@
 import "reactflow/dist/style.css";
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import ReactFlow, {
     Background,
+    BackgroundVariant,
     ConnectionMode,
-    Controls,
     Edge,
     EdgeChange,
     NodeChange,
@@ -34,6 +34,8 @@ import html2canvas from "html2canvas";
 import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
 
+const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
+
 export function MainCanvas() {
     const { showToast } = useToastContext();
     const {
@@ -48,31 +50,31 @@ export function MainCanvas() {
         onNodesDelete,
     } = useFlowContext();
 
-    const [isDragging, setIsDragging] = useState(false);
-    const [startPos, setStartPos] = useState<any>(null);
+    const isDraggingRef = useRef(false);
+    const startPosRef = useRef<any>(null);
     const [boundingBox, setBoundingBox] = useState<any>(null);
 
     useEffect(() => {
         const handleMouseDown = (e: any) => {
             if (e.shiftKey && e.button === 0) {
-                setStartPos({ x: e.clientX, y: e.clientY });
-                setIsDragging(true);
+                startPosRef.current = { x: e.clientX, y: e.clientY };
+                isDraggingRef.current = true;
             }
         };
-        
+
         const handleMouseMove = (e: any) => {
-            if (!isDragging || !startPos) return;
+            if (!isDraggingRef.current || !startPosRef.current) return;
             const currentPos = { x: e.clientX, y: e.clientY };
             setBoundingBox({
-                start_x: startPos.x,
-                start_y: startPos.y,
+                start_x: startPosRef.current.x,
+                start_y: startPosRef.current.y,
                 end_x: currentPos.x,
-                end_y: startPos.y,
+                end_y: startPosRef.current.y,
             });
         };
-        
+
         const handleMouseUp = () => {
-            setIsDragging(false);
+            isDraggingRef.current = false;
         };
 
         document.addEventListener("mousedown", handleMouseDown);
@@ -84,7 +86,7 @@ export function MainCanvas() {
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleMouseUp);
         };
-    }, [isDragging, startPos, boundingBox]);
+    }, []);
 
     const { onContextMenu, showMenu, menuPosition } = useRightClickMenu();
     const { createCodeNode } = useCode();
@@ -100,11 +102,10 @@ export function MainCanvas() {
         return types;
     }, []);
 
-    let objectEdgeTypes: any = {};
-    objectEdgeTypes[EdgeType.BIDIRECTIONAL_EDGE] = BiDirectionalEdge;
-    objectEdgeTypes[EdgeType.UNIDIRECTIONAL_EDGE] = UniDirectionalEdge;
-
-    const edgeTypes = useMemo(() => objectEdgeTypes, []);
+    const edgeTypes = useMemo(() => ({
+        [EdgeType.BIDIRECTIONAL_EDGE]: BiDirectionalEdge,
+        [EdgeType.UNIDIRECTIONAL_EDGE]: UniDirectionalEdge,
+    }), []);
 
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition} = useReactFlow();
@@ -117,9 +118,19 @@ export function MainCanvas() {
         workflowGoal
     } = useFlowContext();
 
-    const [selectedEdgeId, setSelectedEdgeId] = useState<string>(""); // can only remove selected edges
+    // Refs used inside callbacks so the callbacks don't need to list them as deps
+    const selectedEdgeIdRef = useRef<string>("");
+    const dashboardOnRef = useRef<boolean>(false);
+    const hasAutoFitRef = useRef(false);
 
-    const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false); 
+    useEffect(() => {
+        if (!loading && !hasAutoFitRef.current) {
+            hasAutoFitRef.current = true;
+            setTimeout(() => reactFlow.fitView(), 50);
+        }
+    }, [loading, reactFlow]);
+
+    const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
     const [floatingPanels, setFloatingPanels] = useState<any>({});
 
@@ -218,10 +229,100 @@ export function MainCanvas() {
     }
 
     // Apply dashboard mode changes
-    const handleDashboardToggle = (value: boolean) => {
+    const handleDashboardToggle = useCallback((value: boolean) => {
+        dashboardOnRef.current = value;
         setDashboardOn(value);
         setDashBoardMode(value);
-    };
+    }, [setDashBoardMode]);
+
+    const handleDragOver = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+    }, []);
+
+    const handleDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        const type = event.dataTransfer.getData("application/reactflow") as NodeType;
+        if (!type) return;
+        const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        createCodeNode(type, { position });
+    }, [screenToFlowPosition, createCodeNode]);
+
+    const handleNodesChange = useCallback((changes: NodeChange[]) => {
+        const allowedChanges: NodeChange[] = [];
+        const currentEdges = reactFlow.getEdges();
+
+        for (const change of changes) {
+            let allowed = true;
+
+            if (change.type === "remove") {
+                for (const edge of currentEdges) {
+                    if (edge.source === change.id || edge.target === change.id) {
+                        showToast(
+                            "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
+                            "warning"
+                        );
+                        allowed = false;
+                        break;
+                    }
+                }
+            }
+
+            if (
+                change.type === "position" &&
+                change.position != undefined &&
+                change.position.x != undefined
+            ) {
+                if (dashboardOnRef.current)
+                    updatePositionDashboard(change.id, change);
+                else
+                    updatePositionWorkflow(change.id, change);
+            }
+
+            if (allowed) allowedChanges.push(change);
+        }
+
+        onNodesDelete(allowedChanges);
+        return onNodesChange(allowedChanges);
+    }, [reactFlow, showToast, updatePositionDashboard, updatePositionWorkflow, onNodesDelete, onNodesChange]);
+
+    const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
+        let selected = "";
+        const allowedChanges: EdgeChange[] = [];
+        const prevSelectedId = selectedEdgeIdRef.current;
+
+        for (const change of changes) {
+            if (change.type === "select" && change.selected === true) {
+                selectedEdgeIdRef.current = change.id;
+                selected = change.id;
+            } else if (change.type === "select") {
+                selectedEdgeIdRef.current = "";
+            }
+        }
+
+        for (const change of changes) {
+            if (
+                change.type === "remove" &&
+                (selected === change.id || prevSelectedId === change.id)
+            ) {
+                allowedChanges.push(change);
+            } else if (change.type !== "remove") {
+                allowedChanges.push(change);
+            }
+        }
+
+        return onEdgesChange(allowedChanges);
+    }, [onEdgesChange]);
+
+    const handleEdgesDelete = useCallback((edges: Edge[]) => {
+        const allowedEdges = edges.filter(edge => selectedEdgeIdRef.current === edge.id);
+        return onEdgesDelete(allowedEdges);
+    }, [onEdgesDelete]);
+
+    const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
+        setSelectedComponents(selection);
+        setIsComponentsSelected(selection.nodes.length + selection.edges.length > 1);
+    }, []);
 
     // const handleWheel = (e: React.WheelEvent) => {
 
@@ -288,7 +389,7 @@ export function MainCanvas() {
     return (
         <>
         {!loading ? <div
-            style={{ width: "100vw", height: "100vh" }}
+            style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
             onContextMenu={onContextMenu}
             onClick={closeFileMenu}
             // onWheelCapture={handleWheel}
@@ -302,206 +403,89 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
+            <UserMenu />
+            <ToolsMenu />
+            <UpMenu
+                setDashBoardMode={(value) => handleDashboardToggle(value)}
+                setDashboardOn={handleDashboardToggle}
+                dashboardOn={dashboardOn}
+                fileMenuOpen={fileMenuOpen}
+                setFileMenuOpen={setFileMenuOpen}
+                setAIMode={setAIMode}
+            />
+            <RightClickMenu
+                showMenu={showMenu}
+                menuPosition={menuPosition}
+                options={[
+                    {
+                        name: "Add comment box",
+                        action: () => createCodeNode("COMMENTS"),
+                    },
+                ]}
+            />
             <ReactFlow
                 // zoomOnScroll={false}
                 nodes={filteredNodes}
                 edges={edges}
-                onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                }}
-                onDrop={(event) => {
-                    event.preventDefault();
-            
-                    const type = event.dataTransfer.getData("application/reactflow") as NodeType;
-                    if (!type) return;
-            
-                    // const bounds = event.currentTarget.getBoundingClientRect();
-                    // const position = {
-                    //     x: event.clientX,
-                    //     y: event.clientY,
-                    // };
-
-                    const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            
-                    createCodeNode(type, {position})
-                }}
-                onNodesChange={(changes: NodeChange[]) => {
-
-                    let allowedChanges: NodeChange[] = [];
-
-                    let edges = reactFlow.getEdges();
-
-                    for (const change of changes) {
-                        let allowed = true;
-
-                        if (change.type == "remove") {
-                            for (const edge of edges) {
-                                if (
-                                    edge.source == change.id ||
-                                    edge.target == change.id
-                                ) {
-                                    showToast(
-                                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
-                                        "warning"
-                                    );
-                                    allowed = false;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (
-                            change.type == "position" &&
-                            change.position != undefined &&
-                            change.position.x != undefined
-                        ) {
-                            if (dashboardOn)
-                                updatePositionDashboard(change.id, change);
-                            else updatePositionWorkflow(change.id, change);
-                        }
-
-                        if (allowed) allowedChanges.push(change);
-                    }
-
-                    onNodesDelete(allowedChanges);
-                    return onNodesChange(allowedChanges);
-                }}
-                onEdgesChange={(changes: EdgeChange[]) => {
-                    let selected = "";
-                    let allowedChanges = [];
-
-                    for (const change of changes) {
-                        if (
-                            change.type == "select" &&
-                            change.selected == true
-                        ) {
-                            setSelectedEdgeId(change.id);
-                            selected = change.id;
-                        } else if (change.type == "select") {
-                            setSelectedEdgeId("");
-                            selected = "";
-                        }
-                    }
-
-                    for (const change of changes) {
-                        if (
-                            change.type == "remove" &&
-                            (selected == change.id ||
-                                selectedEdgeId == change.id)
-                        ) {
-                            allowedChanges.push(change);
-                        } else if (change.type != "remove") {
-                            allowedChanges.push(change);
-                        }
-                    }
-
-                    return onEdgesChange(allowedChanges);
-                }}
-                onEdgesDelete={(edges: Edge[]) => {
-                    console.log("edges", edges);
-
-                    let allowedEdges: Edge[] = [];
-
-                    for (const edge of edges) {
-                        if (selectedEdgeId == edge.id) {
-                            allowedEdges.push(edge);
-                        }
-                    }
-
-                    return onEdgesDelete(allowedEdges);
-                }}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onNodesChange={handleNodesChange}
+                onEdgesChange={handleEdgesChange}
+                onEdgesDelete={handleEdgesDelete}
                 selectionKeyCode="Shift"
-                onSelectionChange={(selection) => {
-                    let all_x = [];
-                    let all_y = [];
-                
-                    setSelectedComponents(selection);
-
-                    for(const node of selection.nodes){
-                        all_x.push(node.position.x);
-                        all_y.push(node.position.y);    
-                    }
-
-                    if(selection.nodes.length + selection.edges.length > 1){ // There is more than one element selected
-                        setIsComponentsSelected(true);
-                    }else{
-                        setIsComponentsSelected(false);
-                    }
-                }}
+                onSelectionChange={handleSelectionChange}
                 onConnect={onConnect}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-                fitView
+                onlyRenderVisibleElements
+                translateExtent={CANVAS_EXTENT}
             >
+                <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
                 {AIModeRef.current ? <WorkflowGoal /> : null}
-                <UserMenu />
                 {AIModeRef.current ? <LLMChat /> : null}
-                <ToolsMenu />
-                <UpMenu 
-                    setDashBoardMode={(value) => handleDashboardToggle(value)}
-                    setDashboardOn={handleDashboardToggle}
-                    dashboardOn={dashboardOn}
-                    fileMenuOpen={fileMenuOpen}
-                    setFileMenuOpen={setFileMenuOpen}
-                    setAIMode={setAIMode}
-                />
-                <RightClickMenu
-                    showMenu={showMenu}
-                    menuPosition={menuPosition}
-                    options={[
-                        {
-                            name: "Add comment box",
-                            action: () => createCodeNode("COMMENTS"),
-                        },
-                    ]}
-                />
-                <Background />
-                <Controls />
-                { isComponentsSelected ? (
-                    <button
-                        id={"explainButton"}
-                        style={{
-                            bottom: "50px",
-                            left: "30%",
-                            position: "absolute",
-                            zIndex: 10,
-                            padding: "8px 16px",
-                            backgroundColor: "#007bff",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                        }}
-                        onClick={generateExplanation}
-                    >
-                        Explain
-                    </button>
-                ) : null}
-
-                { isComponentsSelected ? (
-                    <button
-                        style={{
-                            bottom: "50px",
-                            left: "40%",
-                            position: "absolute",
-                            zIndex: 10,
-                            padding: "8px 16px",
-                            backgroundColor: "#007bff",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: "4px",
-                            cursor: "pointer",
-                        }}
-                        onClick={generateDebug}
-                    >
-                        Debug
-                    </button>
-                ) : null}
             </ReactFlow>
+            {isComponentsSelected ? (
+                <button
+                    id={"explainButton"}
+                    style={{
+                        bottom: "50px",
+                        left: "30%",
+                        position: "fixed",
+                        zIndex: 10,
+                        padding: "8px 16px",
+                        backgroundColor: "#007bff",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                    }}
+                    onClick={generateExplanation}
+                >
+                    Explain
+                </button>
+            ) : null}
+            {isComponentsSelected ? (
+                <button
+                    style={{
+                        bottom: "50px",
+                        left: "40%",
+                        position: "fixed",
+                        zIndex: 10,
+                        padding: "8px 16px",
+                        backgroundColor: "#007bff",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                    }}
+                    onClick={generateDebug}
+                >
+                    Debug
+                </button>
+            ) : null}
             <input hidden type="file" name="file" id="file" />
 
         </div> : loadingAnimation() }     

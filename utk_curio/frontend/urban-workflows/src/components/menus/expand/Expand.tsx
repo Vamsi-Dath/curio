@@ -1,9 +1,8 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React from 'react';
 import styles from './Expand.module.css';
-import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUpRightAndDownLeftFromCenter, faDownLeftAndUpRightToCenter } from "@fortawesome/free-solid-svg-icons";
-import { useFlowContext } from "../../../providers/FlowProvider";
+import { useNodeActionsContext } from "../../../providers/FlowProvider";
 
 const Expand = ({ }) => {
 
@@ -12,7 +11,7 @@ const Expand = ({ }) => {
         allMinimized,
         expandStatus,
         setExpandStatus
-    } = useFlowContext();
+    } = useNodeActionsContext();
 
     const toggleMinimized = () => {
         if(expandStatus == 'expanded'){
@@ -23,10 +22,6 @@ const Expand = ({ }) => {
             setAllMinimized(0);
         }
     }
-
-    useEffect(() => {
-
-    }, )
 
     return (
         <>
