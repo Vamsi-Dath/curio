@@ -121,14 +121,6 @@ export function MainCanvas() {
     // Refs used inside callbacks so the callbacks don't need to list them as deps
     const selectedEdgeIdRef = useRef<string>("");
     const dashboardOnRef = useRef<boolean>(false);
-    const hasAutoFitRef = useRef(false);
-
-    useEffect(() => {
-        if (!loading && !hasAutoFitRef.current) {
-            hasAutoFitRef.current = true;
-            setTimeout(() => reactFlow.fitView(), 50);
-        }
-    }, [loading, reactFlow]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -440,6 +432,7 @@ export function MainCanvas() {
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
+                fitView
                 onlyRenderVisibleElements
                 translateExtent={CANVAS_EXTENT}
             >
