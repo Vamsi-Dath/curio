@@ -99,7 +99,7 @@ jobs:
 
       - name: 🎭 Run e2e tests
         run: |
-          ./scripts/test.sh --e2e-only --use-existing \
+          bash scripts/test.sh --e2e-only --use-existing \
             --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📊 Install Allure CLI
