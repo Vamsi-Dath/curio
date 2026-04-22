@@ -78,12 +78,12 @@ jobs:
       - name: 🧪 Run backend unit tests
         run: |
           docker compose -p curio exec curio \
-            python -m pytest utk_curio/backend/tests/ -v --ignore=utk_curio/backend/tests/test_frontend
+            bash scripts/test.sh --backend-only --use-existing
 
       - name: 🧪 Run sandbox unit tests
         run: |
           docker compose -p curio exec curio \
-            python -m unittest discover -s utk_curio/sandbox/tests -t . -p "test_*.py" -v
+            bash scripts/test.sh --sandbox-only --use-existing
 
       - name: 🐍 Set up Python (for e2e)
         uses: actions/setup-python@v6
@@ -97,17 +97,10 @@ jobs:
           # ground-truth data.
           sudo chmod -R a+rwx .curio/ 2>/dev/null || mkdir -p .curio/playwright/expected
 
-      - name: 🎭 Install Playwright and run e2e tests
+      - name: 🎭 Run e2e tests
         run: |
-          pip install -r requirements.txt
-          python -m playwright install chromium
-          cd utk_curio/backend
-          # Hard cap so a stuck browser/test cannot burn the whole job budget (see job timeout-minutes).
-          timeout -k 10 3600 env \
-            PYTHONUNBUFFERED=1 \
-            CURIO_E2E_USE_EXISTING=1 PYTHONPATH="$GITHUB_WORKSPACE" \
-            python -m pytest tests/test_frontend/ -v \
-              --alluredir="$GITHUB_WORKSPACE/allure-results"
+          ./scripts/test.sh --e2e-only --use-existing \
+            --allure-dir "$GITHUB_WORKSPACE/allure-results"
 
       - name: 📊 Install Allure CLI
         if: always()
