@@ -76,6 +76,11 @@ wait_for_port() {
   local name=$1 port=$2
   echo "==> Waiting for $name on port $port..."
   for _ in $(seq 240); do
+    # Fail fast if the Curio process already exited
+    if [[ -n "${CURIO_PID:-}" ]] && ! kill -0 "$CURIO_PID" 2>/dev/null; then
+      echo "ERROR: Curio process (pid $CURIO_PID) exited unexpectedly while waiting for $name" >&2
+      exit 1
+    fi
     if python -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('localhost', $port)); s.close()" 2>/dev/null; then
       echo "    $name is ready."
       return
@@ -124,13 +129,19 @@ fi
 echo "==> Installing Python dependencies..."
 pip install -r "$REPO_ROOT/requirements.txt" -q
 
+if [[ $USE_EXISTING -eq 0 ]]; then
+  echo "==> Installing frontend npm dependencies..."
+  (cd "$REPO_ROOT/utk_curio/frontend/utk-workflow/src/utk-ts" && npm install -q)
+  (cd "$REPO_ROOT/utk_curio/frontend/urban-workflows" && npm install -q)
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Start Curio services (backend :5002, sandbox :2000, frontend :8080)
 # ---------------------------------------------------------------------------
 if [[ $USE_EXISTING -eq 0 ]]; then
   echo "==> Starting Curio services..."
   trap cleanup EXIT INT TERM
-  CURIO_NO_OPEN=1 python "$REPO_ROOT/curio.py" start &
+  CURIO_NO_OPEN=1 FLASK_USE_RELOADER=0 python "$REPO_ROOT/curio.py" start &
   CURIO_PID=$!
 
   wait_for_port "backend"  5002

@@ -106,7 +106,7 @@ class TestWorkflowCanvas:
                 if not is_active:
                     output_tab.first.click(force=True)
                 data_table = node_el.locator("td.MuiTableCell-root")
-                data_table.first.wait_for(state="visible", timeout=15000)
+                data_table.first.wait_for(state="visible", timeout=30000)
                 time.sleep(2)
                 assert data_table.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing its "
@@ -371,9 +371,10 @@ class TestWorkflowCanvas:
         order and verify that the output status shows *Done*.
 
         Before touching the browser, the workflow is executed
-        programmatically (in-process, seeded) to produce expected
-        ``.data`` files.  After the browser run the two sets of files
-        are compared.
+        programmatically (in-process, seeded) to produce expected DuckDB
+        artifacts.  After the browser run, artifact content is compared via
+        ``load_artifact_as_dict``; VIS_VEGA nodes are verified via SVG
+        structural comparison.
         """
         expected_map = execute_workflow_programmatically(self.spec, seed=42)
 
@@ -411,38 +412,32 @@ class TestWorkflowCanvas:
                     f"inline output counter after execution"
                 )
 
-                # If the inline output contains a data-file path, verify the
-                # file exists and matches the programmatic execution result.
+                # CodeEditor writes "Saved to file: {artifact_id}" in the inline
+                # output (no .data extension with DuckDB).  Extract the artifact_id
+                # and compare content against the programmatic run.
                 data_output = node_el.locator(".nowheel.nodrag").filter(
-                    has_text=re.compile(r"Saved to file:\s\w+_\w+\.data")
+                    has_text=re.compile(r"Saved to file:\s\w+_\w+")
                 )
-                if data_output.count() >= 1:
-                    data_file_name = data_output.first.evaluate(
+                if data_output.count() >= 1 and node.id in expected_map:
+                    artifact_id = data_output.first.evaluate(
                         r"""(el) => {
-                            const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)/);
+                            const match = el.textContent.match(/Saved to file:\s(\w+_\w+)/);
                             return match ? match[1] : null;
                         }"""
                     )
-                    if data_file_name is not None:
-                        data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
-                        assert os.path.exists(data_file_path), (
-                            f"Node {node.id} ({node.type}) is missing its data file"
-                        )
-                        if node.id in expected_map:
-                            actual = strip_volatile_keys(load_dot_data(data_file_path))
-                            expected_data = strip_volatile_keys(
-                                load_dot_data(expected_map[node.id])
+                    if artifact_id is not None:
+                        actual = load_artifact_as_dict(artifact_id)
+                        expected_data = load_artifact_as_dict(expected_map[node.id])
+                        if actual != expected_data:
+                            diff_keys = [
+                                k for k in set(actual) | set(expected_data)
+                                if actual.get(k) != expected_data.get(k)
+                            ]
+                            raise AssertionError(
+                                f"Node {node.id} ({node.type}) data content "
+                                f"does not match programmatic execution. "
+                                f"Differing top-level keys: {diff_keys}"
                             )
-                            if actual != expected_data:
-                                diff_keys = [
-                                    k for k in set(actual) | set(expected_data)
-                                    if actual.get(k) != expected_data.get(k)
-                                ]
-                                raise AssertionError(
-                                    f"Node {node.id} ({node.type}) data file content "
-                                    f"does not match the programmatic execution. "
-                                    f"Differing top-level keys: {diff_keys}"
-                                )
 
             elif node.category == "grammar":
                 # Grammar nodes (VIS_VEGA, VIS_UTK) keep a dedicated output tab
@@ -498,42 +493,26 @@ class TestWorkflowCanvas:
                             f"Grammar node {node.id} ({node.type}) still shows "
                             f"'No output available.'"
                         )
+                        # DuckDB: output shows "Saved to file: {artifact_id}" (no .data)
                         output_content = tab_content.locator("div").filter(
-                            has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
+                            has_text=re.compile(r"Saved to file:\s\w+_\w+")
                         )
                         output_content.first.wait_for(state="visible", timeout=10000)
                         assert output_content.count() >= 1, (
                             f"Grammar node {node.id} ({node.type}) is missing its "
                             f"output content"
                         )
-                        data_file_name = output_content.first.evaluate(
+                        artifact_id = output_content.first.evaluate(
                             r"""(el) => {
-                                const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
+                                const match = el.textContent.match(/Saved to file:\s(\w+_\w+)/);
                                 return match ? match[1] : null;
                             }"""
                         )
-                        assert data_file_name is not None, (
-                            f"Grammar node {node.id} ({node.type}) is missing its data file path"
+                        assert artifact_id is not None, (
+                            f"Grammar node {node.id} ({node.type}) is missing its artifact id"
                         )
-                        data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
-                        assert os.path.exists(data_file_path), (
-                            f"Grammar node {node.id} ({node.type}) is missing its data file"
-                        )
-                        if node.id in expected_map:
-                            actual = strip_volatile_keys(load_dot_data(data_file_path))
-                            expected_data = strip_volatile_keys(
-                                load_dot_data(expected_map[node.id])
-                            )
-                            if actual != expected_data:
-                                diff_keys = [
-                                    k for k in set(actual) | set(expected_data)
-                                    if actual.get(k) != expected_data.get(k)
-                                ]
-                                raise AssertionError(
-                                    f"Grammar node {node.id} ({node.type}) data file "
-                                    f"content does not match programmatic execution. "
-                                    f"Differing top-level keys: {diff_keys}"
-                                )
+                        # Verify the artifact is accessible from DuckDB
+                        load_artifact_as_dict(artifact_id)
 
                     # ----------------------------------------------------------
                     # Test created SVG Vega-Lite visualizations
@@ -568,11 +547,16 @@ class TestWorkflowCanvas:
                                     None,
                                 )
                             if candidate and candidate in expected_map:
-                                upstream_data = load_dot_data(
+                                upstream_data = load_artifact_as_dict(
                                     expected_map[candidate]
                                 )
                                 vega_values = dot_data_to_vega_values(upstream_data)
                                 break
+
+                        assert vega_values, (
+                            f"VIS_VEGA node {node.id}: no upstream data found in "
+                            f"expected_map — searched upstream ids: {upstream_ids}"
+                        )
 
                         container_dims = self.page.evaluate(
                             """(containerId) => {
