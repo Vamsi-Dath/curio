@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import CSS from "csstype";
 import { useLLMContext } from "../../../providers/LLMProvider";
+import { useToastContext } from "../../../providers/ToastProvider";
 import { useFlowContext } from "../../../providers/FlowProvider";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { useCode } from "../../../hook/useCode";
 import "./WorkflowGoal.css";
 
 export default function WorkflowGoal({ }: { }) {
+    const { showToast } = useToastContext();
     const { openAIRequest, setCurrentEventPipeline } = useLLMContext();
     const { nodes, edges, workflowNameRef, suggestionsLeft, workflowGoal, updateWarnings, updateSubtasks, setWorkflowGoal, eraseWorkflowSuggestions, flagBasedOnKeyword, cleanCanvas, updateKeywords } = useFlowContext();
     const { loadTrill } = useCode();
@@ -88,7 +90,7 @@ export default function WorkflowGoal({ }: { }) {
                 loadTrill(parsed_result, "workflow");
             } catch (error) {
                 console.error("Error communicating with LLM", error);
-                alert("Error communicating with LLM");
+                showToast("Error communicating with LLM", "error");
             } finally {
                 setLoading(false);
             }
@@ -130,7 +132,7 @@ export default function WorkflowGoal({ }: { }) {
             updateKeywords(parsed_result); // Update keywords on the nodes and edges
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         } finally {
             setLoading(false);
         }
@@ -172,7 +174,7 @@ export default function WorkflowGoal({ }: { }) {
 
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
     }
 
@@ -208,7 +210,7 @@ export default function WorkflowGoal({ }: { }) {
 
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
 
     }
@@ -253,7 +255,7 @@ export default function WorkflowGoal({ }: { }) {
 
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
 
     }
@@ -334,7 +336,7 @@ export default function WorkflowGoal({ }: { }) {
 
         }catch(error){
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
     }
 

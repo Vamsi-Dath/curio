@@ -82,8 +82,8 @@ export class TrillGenerator {
 
     }
 
-    static generateTrill(nodes: any, edges: any, name: string, task: string = ""){
-    
+    static generateTrill(nodes: any, edges: any, name: string, task: string = "", packages: string[] = []){
+
         let trill = {
             dataflow: {
                 nodes: [] as any,
@@ -91,7 +91,8 @@ export class TrillGenerator {
                 name: name,
                 task,
                 timestamp: Date.now(),
-                provenance_id: name
+                provenance_id: name,
+                packages,
             }
         }
 

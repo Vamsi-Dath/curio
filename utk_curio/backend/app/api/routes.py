@@ -65,6 +65,7 @@ _node_type_registry: dict = {
     "CONSTANTS":             {"inputTypes": [],                                                   "outputTypes": ["VALUE"]},
     "DATA_POOL":             {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["DATAFRAME", "GEODATAFRAME"]},
     "MERGE_FLOW":            {"inputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"], "outputTypes": ["DATAFRAME", "GEODATAFRAME", "VALUE", "LIST", "JSON"]},
+    "DATA_SUMMARY":          {"inputTypes": ["DATAFRAME", "GEODATAFRAME"],                        "outputTypes": ["JSON"]},
 }
 
 def get_output_types(node_type: str) -> list:
@@ -554,6 +555,19 @@ def process_python_code():
             return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
         finally:
             pass
+    finally:
+        pass
+
+@bp.route('/installPackages', methods=['POST'])
+def install_packages():
+    packages = request.json.get('packages', [])
+    try:
+        response = requests.post(
+            api_address + ":" + str(api_port) + "/install",
+            data=json.dumps({"packages": packages}),
+            headers={"Content-Type": "application/json"},
+        )
+        return response.json()
     finally:
         pass
 

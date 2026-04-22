@@ -17,6 +17,13 @@ This guide is intended for students who are interested in contributing to an ope
   * [Documentation](#documentation)
   * [Community and Support](#community-and-support)
 * [Getting Started (Step-by-Step)](#getting-started-step-by-step)
+* [Running Tests](#running-tests)
+  * [TL;DR](#tldr)
+  * [One-Time Setup](#one-time-setup)
+  * [Backend and Sandbox Tests](#backend-and-sandbox-tests)
+  * [Frontend Unit Tests](#frontend-unit-tests)
+  * [Frontend E2E Tests](#frontend-e2e-tests)
+  * [Database Migrations](#database-migrations)
 * [Organizing Contributions](#organizing-contributions)
   * [Defining the Scope of a Pull Request](#defining-the-scope-of-a-pull-request)
   * [Pull Request Template](#pull-request-template)
@@ -101,6 +108,8 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 * Add new analytic operations as reusable nodes
 * Improve UI and metadata descriptions
 
+For a step-by-step walkthrough of adding a new node type — including a worked example (`DATA_SUMMARY`) — see [ADDING-NODES.md](ADDING-NODES.md).
+
 ### Example Workflows
 
 * Create dataflow examples using public datasets
@@ -167,7 +176,128 @@ After forking:
    ```
 
 7. **Submit a pull request**
+
    Open a PR on GitHub with a detailed description and link to relevant issues. **When you create a PR, make sure you create a PR selecting the branch of the upstream repository you'd like to merge changes into (usually urban-toolkit/curio main).**
+
+## Running Tests
+
+Before submitting a pull request, run the relevant test suites to confirm your changes don't introduce regressions.
+
+### TL;DR
+
+A single script starts all Curio services, runs unit tests and Playwright E2E tests, then shuts everything down:
+
+```bash
+./scripts/test.sh
+```
+
+Common shortcuts:
+
+```bash
+# containers already running, unit tests only
+./scripts/test.sh --use-existing --unit-only
+
+# watch the browser, specific workflows only
+./scripts/test.sh --use-existing --e2e-only --headed --workflows Vega.json,UTK.json
+```
+
+See `./scripts/test.sh --help` for all options, or read the sections below for more detail.
+
+### One-Time Setup
+
+Install the Playwright browser once (use the same Python/venv you use for pytest):
+
+```bash
+playwright install chromium
+# or: python -m playwright install chromium
+```
+
+### Backend and Sandbox Tests
+
+```bash
+pytest utk_curio/backend/tests/
+pytest utk_curio/sandbox/tests/
+```
+
+### Frontend Unit Tests
+
+The frontend uses Jest and React Testing Library for component and TypeScript unit tests.
+
+```bash
+cd utk_curio/frontend/urban-workflows
+npm test -- --watchAll=false
+```
+
+Tests live under `src/tests/` and mirror the structure of `src/components/`. See [utk_curio/frontend/urban-workflows/src/tests/README.md](../utk_curio/frontend/urban-workflows/src/tests/README.md) for guidelines on writing and organizing tests.
+
+### Frontend E2E Tests
+
+The frontend tests use Playwright to upload workflow JSON files into the Curio UI and verify the ReactFlow canvas renders correctly.
+
+```bash
+# full suite
+pytest utk_curio/backend/tests/test_frontend/
+
+# watch the browser while tests run
+pytest utk_curio/backend/tests/test_frontend/ --headed
+
+# use already-running servers (e.g. docker compose)
+CURIO_E2E_USE_EXISTING=1 pytest utk_curio/backend/tests/test_frontend/
+```
+
+Run only specific workflows by setting `CURIO_E2E_WORKFLOWS` (comma-separated basenames):
+
+```bash
+CURIO_E2E_WORKFLOWS=Vega.json,UTK.json pytest utk_curio/backend/tests/test_frontend/test_workflows.py
+```
+
+Preview which tests will run without executing them:
+
+```bash
+pytest --collect-only utk_curio/backend/tests/test_frontend/test_workflows.py
+```
+
+Run a single workflow test:
+
+```bash
+# one workflow, one test method
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py::TestWorkflowCanvas::test_node_and_edge_count[Vega.json]
+
+# all checks for one workflow
+pytest utk_curio/backend/tests/test_frontend/test_workflows.py -k "Vega.json"
+```
+
+**Test matrix** — each workflow runs four checks:
+
+| Test | What it verifies |
+|---|---|
+| `test_node_and_edge_count` | Canvas has the exact node/edge counts from the JSON |
+| `test_node_positions` | Relative x-ordering of nodes is preserved |
+| `test_node_type_and_content` | Correct editor widget per node category (code, grammar, datapool, passive) |
+| `test_node_execution` | Nodes execute correctly and produce the expected output |
+
+**Environment variables:**
+
+| Variable | Purpose |
+|---|---|
+| `CURIO_E2E_WORKFLOWS` | Comma-separated workflow basenames to run (default: all) |
+| `CURIO_E2E_USE_EXISTING` | Set to `1` to skip server startup and use running servers |
+| `CURIO_E2E_HOST` | Host for existing servers (default: `localhost`) |
+| `CURIO_E2E_BACKEND_PORT` | Backend port for existing servers (default: `5002`) |
+| `CURIO_E2E_SANDBOX_PORT` | Sandbox port for existing servers (default: `2000`) |
+| `CURIO_E2E_FRONTEND_PORT` | Frontend port for existing servers (default: `8080`) |
+
+### Database Migrations
+
+If you modify any database model, generate and apply a migration before running tests:
+
+```bash
+# generate a new migration after updating a model
+FLASK_APP=server.py flask db migrate -m "Migration Name"
+
+# apply any pending migrations
+FLASK_APP=server.py flask db upgrade
+```
 
 ## Organizing Contributions
 

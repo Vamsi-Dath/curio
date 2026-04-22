@@ -77,7 +77,7 @@ function NodeEditor({
     const [replacedCode, setReplacedCode] = useState<string>(""); // python or grammar with marks resolved
     const [replacedCodeDirty, setReplacedCodeDirty] = useState<boolean>(false); // code has to rerun every time button is pressed (having changes or not)
     const [fullscreen, setFullscreen] = useState<string>("");
-    const [activeTab, setActiveTab] = useState("widgets");
+    const [activeTab, setActiveTab] = useState("code");
 
     const contentComponentBypass = useRef(false);
 
@@ -105,7 +105,7 @@ function NodeEditor({
     }, [contentComponent]);
 
     const sendReplacedCode = (code: string) => {
-        if (fullscreen == "" || fullscreen == undefined) setActiveTab("output");
+        if ((fullscreen == "" || fullscreen == undefined) && (outputId != undefined || contentComponent != undefined)) setActiveTab("output");
         setReplacedCode(code);
         setReplacedCodeDirty((prev: boolean) => {
             return !prev;
@@ -182,25 +182,6 @@ function NodeEditor({
                             <Tab.Content
                                 style={{ ...activeTabContentStyle, zIndex: 10 }}
                             >
-                                {widgets ? (
-                                    <Tab.Pane
-                                        eventKey="widgets"
-                                        style={{ height: "100%" }}
-                                    >
-                                        <WidgetsEditor
-                                            customWidgetsCallback={
-                                                customWidgetsCallback
-                                            }
-                                            markersDirty={markersDirty}
-                                            sendReplacedCode={sendReplacedCode}
-                                            userCode={userCode}
-                                            nodeId={data.nodeId}
-                                            data={{...data, nodeType}}
-                                            disableWidgets={disableWidgets}
-                                        />
-                                    </Tab.Pane>
-                                ) : null}
-
                                 {code ? (
                                     <Tab.Pane
                                         eventKey="code"
@@ -223,6 +204,25 @@ function NodeEditor({
                                             data={data}
                                             output={output}
                                             nodeType={nodeType}
+                                        />
+                                    </Tab.Pane>
+                                ) : null}
+
+                                {widgets ? (
+                                    <Tab.Pane
+                                        eventKey="widgets"
+                                        style={{ height: "100%" }}
+                                    >
+                                        <WidgetsEditor
+                                            customWidgetsCallback={
+                                                customWidgetsCallback
+                                            }
+                                            markersDirty={markersDirty}
+                                            sendReplacedCode={sendReplacedCode}
+                                            userCode={userCode}
+                                            nodeId={data.nodeId}
+                                            data={{...data, nodeType}}
+                                            disableWidgets={disableWidgets}
                                         />
                                     </Tab.Pane>
                                 ) : null}
@@ -275,43 +275,25 @@ function NodeEditor({
                                     </Tab.Pane>
                                 ) : null}
 
-                                <Tab.Pane
-                                    eventKey="output"
-                                    style={{ height: "100%", overflowY: "auto" }}
-                                >
-                                    {outputId != undefined ? (
-                                        <div
-                                            id={outputId}
-                                            style={{
-                                                textAlign: "center",
-                                                width: "100%",
-                                                height: "100%",
-                                            }}
-                                        ></div>
-                                    ) : contentComponent != undefined ? (
-                                        contentComponent
-                                    ) : (
-                                        <div
-                                            style={{
-                                                width: "100%",
-                                                height: "100%",
-                                                whiteSpace: "pre-wrap",
-                                                overflowY: "auto",
-                                            }}
-                                            className={"nowheel nodrag"}
-                                        >
-                                            <p
+                                {(outputId != undefined || contentComponent != undefined) ? (
+                                    <Tab.Pane
+                                        eventKey="output"
+                                        style={{ height: "100%", overflowY: "auto" }}
+                                    >
+                                        {outputId != undefined ? (
+                                            <div
+                                                id={outputId}
                                                 style={{
-                                                    margin: 0,
-                                                    padding: "10px",
-                                                    fontSize: "10px",
+                                                    textAlign: "center",
+                                                    width: "100%",
+                                                    height: "100%",
                                                 }}
-                                            >
-                                                {output.content as string}
-                                            </p>
-                                        </div>
-                                    )}
-                                </Tab.Pane>
+                                            ></div>
+                                        ) : (
+                                            contentComponent
+                                        )}
+                                    </Tab.Pane>
+                                ) : null}
                             </Tab.Content>
                         </Col>
                     </Row>
@@ -334,27 +316,6 @@ function NodeEditor({
                                 paddingLeft: 0,
                             }}
                         >
-                            {widgets ? (
-                                <Col>
-                                    <OverlayTrigger
-                                        placement="right"
-                                        delay={overlayTriggerProps}
-                                        overlay={<Tooltip>Widgets</Tooltip>}
-                                    >
-                                        <Nav.Item style={navItemStyle}>
-                                            <Nav.Link
-                                                eventKey="widgets"
-                                                style={navLinkStyle}
-                                            >
-                                                <FontAwesomeIcon
-                                                    icon={faToolbox}
-                                                />
-                                            </Nav.Link>
-                                        </Nav.Item>
-                                    </OverlayTrigger>
-                                </Col>
-                            ) : null}
-
                             {code ? (
                                 <Col>
                                     <OverlayTrigger
@@ -369,6 +330,27 @@ function NodeEditor({
                                             >
                                                 <FontAwesomeIcon
                                                     icon={faCode}
+                                                />
+                                            </Nav.Link>
+                                        </Nav.Item>
+                                    </OverlayTrigger>
+                                </Col>
+                            ) : null}
+
+                            {widgets ? (
+                                <Col>
+                                    <OverlayTrigger
+                                        placement="right"
+                                        delay={overlayTriggerProps}
+                                        overlay={<Tooltip>Widgets</Tooltip>}
+                                    >
+                                        <Nav.Item style={navItemStyle}>
+                                            <Nav.Link
+                                                eventKey="widgets"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faToolbox}
                                                 />
                                             </Nav.Link>
                                         </Nav.Item>
@@ -434,46 +416,30 @@ function NodeEditor({
                                 </Col>
                             ) : null}
 
-                            <Col>
-                                <OverlayTrigger
-                                    placement="right"
-                                    delay={overlayTriggerProps}
-                                    overlay={<Tooltip>Output</Tooltip>}
-                                >
-                                    <Nav.Item style={navItemStyle}>
-                                        <Nav.Link
-                                            eventKey="output"
-                                            style={navLinkStyle}
-                                        >
-                                            <FontAwesomeIcon
-                                                icon={faRightFromBracket}
-                                            />
-                                        </Nav.Link>
-                                    </Nav.Item>
-                                </OverlayTrigger>
-                            </Col>
+                            {(outputId != undefined || contentComponent != undefined) ? (
+                                <Col>
+                                    <OverlayTrigger
+                                        placement="right"
+                                        delay={overlayTriggerProps}
+                                        overlay={<Tooltip>Output</Tooltip>}
+                                    >
+                                        <Nav.Item style={navItemStyle}>
+                                            <Nav.Link
+                                                eventKey="output"
+                                                style={navLinkStyle}
+                                            >
+                                                <FontAwesomeIcon
+                                                    icon={faRightFromBracket}
+                                                />
+                                            </Nav.Link>
+                                        </Nav.Item>
+                                    </OverlayTrigger>
+                                </Col>
+                            ) : null}
                         </Row>
                     </Nav>
                 </Tab.Container>
             </div>
-            <FontAwesomeIcon
-                style={{
-                    ...iconStyle,
-                    fontSize: "10px",
-                    position: "fixed",
-                    zIndex: 11,
-                    top: "12px",
-                    left: "30px",
-                    ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {}),
-                    ...(data.keywordHighlighted ? {color: "white"} : {color: "#888787"})
-                }}
-                onClick={() =>
-                    fullscreen != "" && fullscreen != undefined
-                        ? setFullscreen("")
-                        : setFullscreen("fs")
-                }
-                icon={faExpand}
-            />
         </>
     );
 }

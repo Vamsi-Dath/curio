@@ -18,8 +18,7 @@
 - [ ] Sandbox
 
 # Testing
- - [ ] Unit Tests
- - [ ] Manual Testing (please provide details below)
+ - [ ] Executed `./scripts/test.sh` and it passed all tests.
 
 # Screenshots (if relevant)
 

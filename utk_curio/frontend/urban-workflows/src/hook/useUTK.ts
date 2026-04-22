@@ -10,8 +10,10 @@ import { formatDate, getType, mapTypes } from "../utils/formatters";
 import { ICodeData } from "../types";
 import { useFlowContext } from "../providers/FlowProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
+import { useToastContext } from "../providers/ToastProvider";
 
 export function useUTK({ data, code }: { data: any, code: string }) {
+  const { showToast } = useToastContext();
   const [output, setOutput] = useState<ICodeData>({ code: "", content: "" });
   const { workflowNameRef } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
@@ -341,12 +343,12 @@ export function useUTK({ data, code }: { data: any, code: string }) {
         if (parsedInput.dataType == "outputs") {
           for (const elem of parsedInput.data) {
             if (elem.dataType != "geodataframe") {
-              alert("UTK node can only receive geodataframes");
+              showToast("UTK node can only receive geodataframes", "error");
               validInput = false;
             }
           }
         } else if (parsedInput.dataType != "geodataframe") {
-          alert("UTK node can only receive geodataframes");
+          showToast("UTK node can only receive geodataframes", "error");
           validInput = false;
         }
 
@@ -385,12 +387,12 @@ export function useUTK({ data, code }: { data: any, code: string }) {
               parsedGeojson.metadata != undefined &&
               parsedGeojson.metadata.name == undefined
             ) {
-              alert("All geojson layers for UTK must be named");
+              showToast("All GeoJSON layers for UTK must be named", "error");
               return;
             }
 
             if (parsedGeojson.metadata == undefined) {
-              alert("All geojson layers for UTK must be named");
+              showToast("All GeoJSON layers for UTK must be named", "error");
               return;
             }
           }

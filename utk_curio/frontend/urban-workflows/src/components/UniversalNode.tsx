@@ -13,7 +13,7 @@ import { HandleDef, TIconCardinality } from '../registry/types';
 import './Node.css';
 import 'bootstrap/dist/css/bootstrap.min.css';
 
-function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
+const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }: { data: any; isConnectable: boolean }) {
   const descriptor = getNodeDescriptor(data.nodeType);
   const { adapter } = descriptor;
 
@@ -127,6 +127,6 @@ function UniversalNode({ data, isConnectable }: { data: any; isConnectable: bool
       </NodeContainer>
     </>
   );
-}
+});
 
 export default UniversalNode;

@@ -7,9 +7,10 @@
  * and connection logic.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Node, Edge, NodeChange, NodeRemoveChange, Connection, useReactFlow } from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
+import { useToastContext } from "../providers/ToastProvider";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { TrillGenerator } from "../TrillGenerator";
 
@@ -46,6 +47,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
     const reactFlow = useReactFlow();
     const { newNode, addWorkflow } = useProvenanceContext();
+    const { showToast } = useToastContext();
 
     // fitViewOnLoad is internal to workflow loading
     const [fitViewOnLoad, setFitViewOnLoad] = useState(false);
@@ -55,6 +57,15 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [expandStatus, setExpandStatus] = useState<'expanded' | 'minimized'>('expanded');
     const [suggestionsLeft, setSuggestionsLeft] = useState<number>(0); // Number of suggestions left
     const [workflowGoal, setWorkflowGoal] = useState("");
+    const [packages, setPackages] = useState<string[]>([]);
+
+    const addPackage = useCallback((pkg: string) => {
+        setPackages((prev) => prev.includes(pkg) ? prev : [...prev, pkg]);
+    }, []);
+
+    const removePackage = useCallback((pkg: string) => {
+        setPackages((prev) => prev.filter((p) => p !== pkg));
+    }, []);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -82,18 +93,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     // Trill / Data Operations
     // ---------------------------------------------------------------------------
 
-    const updateDataNode = (nodeId: string, newData: any) => {
+    const updateDataNode = useCallback((nodeId: string, newData: any) => {
         console.log("updateDataNode");
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, () => ({ ...newData })));
-    }
+    }, [setNodes]);
 
-    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean) => {
+    const loadParsedTrill = async (workflowName: string, task: string, loaded_nodes: any, loaded_edges: any, provenance?: boolean, merge?: boolean, incomingPackages?: string[]) => {
         if (!merge) {
             TrillGenerator.reset();
             setWorkflowName(workflowName);
             await addWorkflow(workflowName);
             const empty_trill = TrillGenerator.generateTrill([], [], workflowName);
             TrillGenerator.intializeProvenance(empty_trill);
+            setPackages(incomingPackages || []);
             console.log("loadParsedTrill reseting nodes");
             setNodes(() => []);
         }
@@ -146,10 +158,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         });
     }
 
-    const updateDefaultCode = (nodeId: string, content: string) => {
+    const updateDefaultCode = useCallback((nodeId: string, content: string) => {
         console.log("updateDefaultCode");
         setNodes((prevNodes: Node[]) => updateNodeData(prevNodes, nodeId, (data: any) => ({ ...data, defaultCode: content })));
-    }
+    }, [setNodes]);
 
     // Given a trill specification update the keywords property of the associated nodes
     const updateKeywords = (trill_spec: any) => {
@@ -214,9 +226,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setPositionsInDashboard({});
         setPositionsInWorkflow({});
         setSuggestionsLeft(0);
+        setPackages([]);
     }
 
-    const applyRemoveChanges = (changes: NodeRemoveChange[]) => {
+    const applyRemoveChanges = useCallback((changes: NodeRemoveChange[]) => {
         let allowedChanges: NodeRemoveChange[] = [];
 
         let edges = reactFlow.getEdges();
@@ -229,8 +242,9 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
                     edge.source == change.id ||
                     edge.target == change.id
                 ) {
-                    alert(
-                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace."
+                    showToast(
+                        "Connected boxes cannot be removed. Remove the edges first by selecting it and pressing backspace.",
+                        "warning"
                     );
                     allowed = false;
                     break;
@@ -242,7 +256,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
-    };
+    }, [reactFlow, showToast, onNodesDelete, onNodesChange]);
 
     // ---------------------------------------------------------------------------
     // Suggestion Management
@@ -292,7 +306,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }
 
     // Accept the suggestion for adding a specific node
-    const acceptSuggestion = (nodeId: string) => {
+    const acceptSuggestion = useCallback((nodeId: string) => {
         console.log("acceptSuggestion");
         setNodes((prevNodes: Node[]) => {
             let acceptedConnectionSuggestion = false;
@@ -345,7 +359,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
 
             return filteredNodes;
         });
-    }
+    }, [setNodes, setEdges, newNode, workflowNameRef]);
 
     // If keywordIndex is undefined all components are unflagged
     const flagBasedOnKeyword = (keywordIndex?: number) => {
@@ -400,6 +414,10 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         suggestionsLeft,
         workflowGoal,
         setWorkflowGoal,
+        packages,
+        setPackages,
+        addPackage,
+        removePackage,
 
         // Operations
         updateDataNode,

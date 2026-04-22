@@ -145,7 +145,7 @@ export function useCode(): IUseCode {
         }
 
         if(suggestionType == undefined)
-            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false); 
+            loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, true, false, trill.dataflow.packages || []);
         else if(suggestionType == "workflow")
             loadParsedTrill(trill.dataflow.name, trill.dataflow.task, nodes, edges, false, true); // if loading as suggestion deactivate provenance and merge
         else

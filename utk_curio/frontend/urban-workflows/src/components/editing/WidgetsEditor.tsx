@@ -6,6 +6,7 @@ import { WidgetType, NodeType } from "../../constants";
 import { PythonInterpreter } from "../../PythonInterpreter";
 import { useFlowContext } from "../../providers/FlowProvider";
 import { useProvenanceContext } from "../../providers/ProvenanceProvider";
+import { useToastContext } from "../../providers/ToastProvider";
 
 import "./WidgetsEditor.css";
 
@@ -45,6 +46,7 @@ function WidgetsEditor({
     const markersDirtyBypass = useRef(false);
     const { workflowNameRef } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
+    const { showToast } = useToastContext();
 
     // File upload handling functions
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -255,10 +257,11 @@ except Exception as e:
             let config = content.split("$");
 
             if (config.length < 3 || config.length > 4) {
-                alert(
+                showToast(
                     "Invalid marker [!! " +
                     content +
-                    " !!]. Markers must follow [!! variable$widget$default$arg1;arg2;arg3 !!]"
+                    " !!]. Markers must follow [!! variable$widget$default$arg1;arg2;arg3 !!]",
+                    "error"
                 );
                 return {};
             }
@@ -295,10 +298,11 @@ except Exception as e:
                 let resolvedMark = validateWidgetValue(config[1], config[2]); // validate what comes from default values in the marks
 
                 if (Object.keys(resolvedMark).length == 0) {
-                    alert(
+                    showToast(
                         "Invalid widget and default value combination for [!! " +
                         content +
-                        " !!]"
+                        " !!]",
+                        "error"
                     );
                     return {};
                 }
@@ -350,7 +354,7 @@ except Exception as e:
         });
 
         if (errorReplacing) {
-            alert("Could not resolve marks");
+            showToast("Could not resolve marks", "error");
             return {};
         } else {
             sendReplacedCode(replacedCode);
@@ -443,7 +447,7 @@ except Exception as e:
 
             setNonValidatedValues({ ...newWidgetsValues });
         } else {
-            alert("Invalid input(s) for widget(s)");
+            showToast("Invalid input(s) for widget(s)", "error");
         }
     };
 
@@ -505,7 +509,7 @@ except Exception as e:
                     }
 
                     reader.onerror = () => {
-                        alert("Error reading file.");
+                        showToast("Error reading file.", "error");
                         newNonValidatedValues[elem] = {
                             widget: widget,
                             value: "",

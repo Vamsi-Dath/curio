@@ -53,12 +53,20 @@
   color: #666;
 }
 
-.uploadRow {
+.addRow {
   display: flex;
   gap: 8px;
 }
 
-.uploadButton {
+.input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.addButton {
   padding: 6px 14px;
   background-color: #1E1F23;
   color: white;
@@ -68,20 +76,15 @@
   font-size: 13px;
 }
 
-.uploadButton:hover:not(:disabled) {
+.addButton:hover {
   background-color: rgb(251, 170, 105);
 }
 
-.uploadButton:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.datasetList {
+.packageList {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 300px;
+  max-height: 200px;
   overflow-y: auto;
   border: 1px solid #eee;
   border-radius: 4px;
@@ -96,15 +99,83 @@
   padding: 10px 0;
 }
 
-.datasetRow {
+.packageRow {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   background: #f9f9f9;
   border-radius: 4px;
   padding: 4px 8px;
 }
 
-.datasetName {
+.packageName {
   font-size: 13px;
   font-family: monospace;
+}
+
+.removeButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: #999;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.removeButton:hover {
+  color: #d00;
+}
+
+.installButton {
+  padding: 8px 16px;
+  background-color: #1E1F23;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: bold;
+  align-self: flex-start;
+}
+
+.installButton:hover:not(:disabled) {
+  background-color: rgb(251, 170, 105);
+}
+
+.installButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.logContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 12px;
+}
+
+.logSuccess {
+  color: #2a7a2a;
+}
+
+.logError {
+  color: #a00;
+}
+
+.logOutput {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 11px;
+  background: #f4f4f4;
+  padding: 4px 6px;
+  border-radius: 3px;
+  max-height: 100px;
+  overflow-y: auto;
 }

@@ -32,6 +32,7 @@ import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
 import UserProvider from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
+import { ToastProvider } from "./providers/ToastProvider";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
 import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
@@ -41,6 +42,7 @@ import LLMProvider from "./providers/LLMProvider";
 const App: React.FC = () => {
   return (
     <BackendHealthBanner>
+    <ToastProvider>
     <ReactFlowProvider>
       <LLMProvider>
         <ProvenanceProvider>
@@ -56,6 +58,7 @@ const App: React.FC = () => {
         </ProvenanceProvider>
       </LLMProvider>
     </ReactFlowProvider>
+    </ToastProvider>
     </BackendHealthBanner>
   );
 };

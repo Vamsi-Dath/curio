@@ -1,6 +1,8 @@
 from flask import request, abort, jsonify
 import json
+import re
 import subprocess
+import sys
 import geopandas as gpd
 import pandas as pd
 import utk
@@ -11,6 +13,8 @@ import mmap
 from pathlib import Path
 
 from shapely import wkt
+
+_VALID_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-]*(\[[\w,\s]+\])?(===?|~=|!=|>=?|<=?[a-zA-Z0-9._\-*]+)?$')
 
 DATA_DIR = "./data"
 
@@ -90,6 +94,33 @@ def list_datasets():
         ])
 
     return jsonify(files)
+
+@app.route('/install', methods=['POST'])
+def install_packages():
+    packages = request.json.get('packages', [])
+    if not packages:
+        abort(400, "No packages specified")
+
+    results = []
+    for package in packages:
+        package = package.strip()
+        if not package:
+            continue
+        if not _VALID_PACKAGE_RE.match(package):
+            results.append({"package": package, "success": False, "stdout": "", "stderr": f"Invalid package name: {package}"})
+            continue
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', package],
+            capture_output=True, text=True
+        )
+        results.append({
+            "package": package,
+            "success": result.returncode == 0,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+        })
+
+    return jsonify({"results": results})
 
 @app.route('/exec', methods=['POST'])
 # @cache.cached(make_cache_key=make_key)

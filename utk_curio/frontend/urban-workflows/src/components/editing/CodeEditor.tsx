@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
 
-// Bootstrap
-import Button from "react-bootstrap/Button";
 import "bootstrap/dist/css/bootstrap.min.css";
 import { NodeType } from "../../constants";
 
@@ -37,6 +35,7 @@ function CodeEditor({
     floatCode,
 }: CodeEditorProps) {
     const [code, setCode] = useState<string>(""); // code with all original markers
+    const [execCount, setExecCount] = useState<number>(0);
 
     const { workflowNameRef } = useFlowContext();
     const { nodeExecProv } = useProvenanceContext();
@@ -61,6 +60,12 @@ function CodeEditor({
     useEffect(() => {
         if (floatCode != undefined) floatCode(code);
     }, [code]);
+
+    useEffect(() => {
+        if (output.code === "success" || output.code === "error") {
+            setExecCount(prev => prev + 1);
+        }
+    }, [output.code]);
 
     const processExecutionResult = (result: any) => {
         let outputContent = "";
@@ -143,40 +148,53 @@ function CodeEditor({
         }
     }, []);
 
+    const execLabel = output.code === "exec" ? "[*]:" : execCount > 0 ? `[${execCount}]:` : "[ ]:";
+    const outputText = output.code === "exec"
+        ? "Running..."
+        : typeof output.content === "string" && output.content
+            ? output.content
+            : "No output yet";
+
     return (
-        <div className={"nowheel nodrag"} style={{ height: "100%" }}>
-            <Editor
-                language="python"
-                theme="vs-dark"
-                value={code}
-                onChange={handleCodeChange}
-                options={{
-                    // @ts-ignore
-                    inlineSuggest: true,
-                    fontSize: 8,
-                    formatOnType: true,
-                    // @ts-ignore
-                    autoClosingBrackets: true,
-                    minimap: { enabled: false },
-                    readOnly: readOnly,
+        <div className="nowheel nodrag" style={{ height: "100%", display: "flex", flexDirection: "column", backgroundColor: "#fff" }}>
+            <div style={{ flex: 2, minHeight: 0 }}>
+                <Editor
+                    height="100%"
+                    language="python"
+                    theme="vs"
+                    value={code}
+                    onChange={handleCodeChange}
+                    options={{
+                        // @ts-ignore
+                        inlineSuggest: true,
+                        fontSize: 13,
+                        fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
+                        formatOnType: true,
+                        autoClosingBrackets: "always",
+                        minimap: { enabled: false },
+                        readOnly: readOnly,
+                        scrollBeyondLastLine: false,
+                    }}
+                />
+            </div>
+            <div
+                className="nowheel nodrag"
+                style={{
+                    flex: 1,
+                    minHeight: 0,
+                    overflowY: "auto",
+                    backgroundColor: "#f7f7f7",
+                    borderTop: "1px solid #e0e0e0",
+                    padding: "4px 8px",
+                    fontSize: "11px",
+                    fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
+                    whiteSpace: "pre-wrap",
+                    color: output.code === "error" ? "#c0392b" : "#333",
                 }}
-            />
-            {/* <div
-                className="nowheel"
-                style={{ width: "100%", maxHeight: "200px", overflowY: "scroll" }}
             >
-                {output == "success" ? "Done" : output == "exec" ? "Executing..." : output != "" ? "Error: "+output : ""}
-            </div> */}
-            {/* <Button
-                as="a"
-                variant="primary"
-                onClick={() => {
-                    setOutputCallback("exec");
-                    sendCodeToWidgets(code); // will resolve markers
-                }}
-            >
-                Run code
-          </Button> */}
+                <span style={{ color: "#303F9F", fontWeight: "bold", marginRight: "6px" }}>{execLabel}</span>
+                {outputText}
+            </div>
         </div>
     );
 }

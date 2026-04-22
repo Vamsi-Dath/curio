@@ -7,6 +7,7 @@ import { Dict } from "vega-lite";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { parseDataframe, parseGeoDataframe } from "../utils/parsing";
 import { useFlowContext } from "../providers/FlowProvider";
+import { useToastContext } from "../providers/ToastProvider";
 
 // const schema = require('./vega-schema.json');
 const vega = require("vega");
@@ -18,6 +19,7 @@ if (typeof window !== 'undefined') {
 }
 
 export const useVega = ({ data, code }: { data: any; code: string; }) => {
+  const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({}); // {signal: {type: point/interval, data: }} // if type point data contains list of object ids. If type is interval data is an object where each key is an attribute with intervals or lists
 
   const [currentView, _setCurrentView] = useState<any>(null);
@@ -123,7 +125,7 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       if (currentView == null) return;
       processData();
     } catch (error: any) {
-      alert(error.message);
+      showToast(error.message, "error");
     }
   }, [data.input]);
 

@@ -2,8 +2,8 @@ import React, { ReactNode, useState, useEffect } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
-import { useFlowContext } from "../providers/FlowProvider";
-import { NodeRemoveChange } from "reactflow";
+import { useNodeActionsContext } from "../providers/FlowProvider";
+import { NodeRemoveChange, useReactFlow } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
 import { useRightClickMenu } from "../hook/useRightClickMenu";
@@ -16,6 +16,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { useUserContext } from "../providers/UserProvider";
 import { useLLMContext } from "../providers/LLMProvider";
+import { useToastContext } from "../providers/ToastProvider";
 import { ConnectionValidator } from "../ConnectionValidator";
 import Col from "react-bootstrap/Col";
 import Nav from "react-bootstrap/Nav";
@@ -102,11 +103,10 @@ export const NodeContainer = ({
     isLoading?: boolean;
     handleType?: string;
 }) => {
-    const { 
-        nodes, 
-        edges, 
-        workflowNameRef, 
-        applyRemoveChanges, 
+    const { showToast } = useToastContext();
+    const {
+        workflowNameRef,
+        applyRemoveChanges,
         setPinForDashboard,
         allMinimized,
         setExpandStatus,
@@ -114,7 +114,8 @@ export const NodeContainer = ({
         updateDefaultCode,
         workflowGoal,
         acceptSuggestion
-    } = useFlowContext();
+    } = useNodeActionsContext();
+    const { getNodes, getEdges } = useReactFlow();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
     const [showComments, setShowComments] = useState(false);
@@ -200,7 +201,7 @@ export const NodeContainer = ({
                 }
 
                 if (nodeHeight == undefined) {
-                    setCurrentNodeHeight(267);
+                    setCurrentNodeHeight(350);
                 } else {
                     setCurrentNodeHeight(nodeHeight);
                 }
@@ -218,7 +219,7 @@ export const NodeContainer = ({
         }
 
         if (nodeHeight == undefined) {
-            setCurrentNodeHeight(267);
+            setCurrentNodeHeight(350);
         }
 
         const resizer = document.getElementById(
@@ -285,7 +286,7 @@ export const NodeContainer = ({
             updateDataGoal(new_subtask);
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
     }
 
@@ -383,7 +384,7 @@ export const NodeContainer = ({
             loadTrill(parsed_result, "connection");
         } catch (error) {
             console.error("Error communicating with LLM", error);
-            alert("Error communicating with LLM");
+            showToast("Error communicating with LLM", "error");
         }
 
     }
@@ -415,7 +416,7 @@ export const NodeContainer = ({
 
             } catch (error) {
                 console.error("Error communicating with LLM", error);
-                alert("Error communicating with LLM");
+                showToast("Error communicating with LLM", "error");
             }
         }
 
@@ -423,7 +424,7 @@ export const NodeContainer = ({
 
     const clickGenerateContentNode = () => {
         setCurrentEventPipeline("Generate content for node");
-        generateContentNode(nodes, edges, workflowNameRef, goal, workflowGoal);
+        generateContentNode(getNodes(), getEdges(), workflowNameRef, goal, workflowGoal);
     }
 
     const nodeIconTranslation = (nodeType: NodeType) => {
@@ -526,7 +527,7 @@ export const NodeContainer = ({
                     icon={faCirclePlus} 
                     onClick={() => {
                         if(AIModeRef.current)
-                            generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "input")
+                            generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "input")
                     }} /> : null
             }
 
@@ -552,7 +553,7 @@ export const NodeContainer = ({
             {!minimized && isConnectionRightOpen && (handleType == "in/out" || handleType == "out") && !(data.suggestionType != "none" && data.suggestionType != undefined) ?
                 <FontAwesomeIcon style={newOutConnectionStyle} icon={faCirclePlus} onClick={() => {
                     if(AIModeRef.current)
-                        generateConnectionSuggestions(nodes, edges, workflowNameRef, goal, "output")
+                        generateConnectionSuggestions(getNodes(), getEdges(), workflowNameRef, goal, "output")
                 }} /> : null
             }
 
@@ -567,7 +568,7 @@ export const NodeContainer = ({
                 id={nodeId + "resizable"}
                 className={"resizable"}
                 style={{
-                    ...nodeContainerStyles,
+                    ...getNodeContainerStyles(data.nodeType),
                     ...styles,
                     width: currentNodeWidth + "px",
                     height: currentNodeHeight + "px",
@@ -579,118 +580,82 @@ export const NodeContainer = ({
                 onContextMenu={onContextMenu}
             >
                 {!noContent ? (
-                    <Row
-                        style={{
-                            width: "95%",
-                            height: "30px",
-                            marginBottom: "2px",
-                            paddingBottom: "2px",
-                            marginLeft: "auto",
-                            marginRight: "auto",
-                            borderBottom: "1px solid rgba(107, 107, 107, 0.3)",
-                        }}
-                    >
-                        <p
-                            style={{
-                                ...{
-                                    textAlign: "center",
-                                    marginBottom: 0,
-                                    fontSize: "12px",
-                                    fontWeight: "bold",
-                                    position: "fixed",
-                                    top: "10px",
-                                    left: 0,
-                                    color: "#888787",
-                                },
-                                ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
-                            }}
-                        >
-                            {nodeNameTranslation(data.nodeType)}
-                            {templateData.name != undefined
-                                ? " - " + templateData.name
-                                : null}
-                        </p>
+                    <div style={{
+                        display: "flex",
+                        alignItems: "center",
+                        height: "30px",
+                        marginBottom: "2px",
+                        paddingBottom: "2px",
+                        borderBottom: "1px solid rgba(107, 107, 107, 0.3)",
+                        gap: "6px",
+                        padding: "0 4px 2px 4px",
+                        boxSizing: "border-box",
+                        width: "100%",
+                        ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
+                    }}>
+                        {/* Minimize toggle */}
+                        <FontAwesomeIcon
+                            icon={faMinus}
+                            style={{ ...headerIconStyle, flexShrink: 0, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                            title="Minimize"
+                            onClick={() => setMinimized(true)}
+                        />
 
-                        <ul
+                        {/* Node name — fills remaining space */}
+                        <span style={{
+                            flex: 1,
+                            textAlign: "center",
+                            fontSize: "12px",
+                            fontWeight: "bold",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                            minWidth: 0,
+                            color: data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787",
+                        }}>
+                            {nodeNameTranslation(data.nodeType)}
+                            {templateData.name != undefined ? " · " + templateData.name : null}
+                        </span>
+
+                        {/* Right-side action icons */}
+                        {promptModal != undefined && templateData.id != undefined && templateData.custom ? (
+                            <FontAwesomeIcon
+                                icon={faGear}
+                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                title="Settings"
+                                onClick={() => promptModal()}
+                            />
+                        ) : null}
+                        <FontAwesomeIcon
+                            icon={pinnedToDashboard ? faCircleDot : faCircle}
                             style={{
-                                listStyle: "none",
-                                padding: 0,
-                                display: "flex",
-                                margin: 0,
-                                justifyContent: "flex-end",
-                                zIndex: 5,
+                                ...headerIconStyle,
+                                color: pinnedToDashboard ? "red" : (data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787"),
                             }}
-                        >
-                            {promptModal != undefined &&
-                            templateData.id != undefined &&
-                            templateData.custom ? (
-                                <li style={{ marginLeft: "10px" }}>
-                                    <FontAwesomeIcon
-                                        onClick={() => {
-                                            promptModal();
-                                        }}
-                                        icon={faGear}
-                                        style={iconStyle}
-                                    />
-                                </li>
-                            ) : null}
-                            <li style={{ marginLeft: "10px" }}>
-                                <FontAwesomeIcon
-                                    onClick={() => {
-                                        promptDescription();
-                                    }}
-                                    icon={faCircleInfo}
-                                    style={{
-                                        ...iconStyle,
-                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
-                                    }}
-                                />
-                            </li>
-                            <li style={{ marginLeft: "10px" }}>
-                                <FontAwesomeIcon
-                                    icon={faComments}
-                                    style={{
-                                        ...iconStyle,
-                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
-                                    }}
-                                    onClick={() =>
-                                        setShowComments(!showComments)
-                                    }
-                                />
-                            </li>
-                            <li style={{ marginLeft: "10px" }}>
-                                <FontAwesomeIcon
-                                    icon={faXmark}
-                                    style={{
-                                        ...iconStyle, 
-                                        ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
-                                    }}
-                                    onClick={onDelete}
-                                />
-                            </li>
-                            {updateTemplate != undefined &&
-                            code != undefined &&
-                            templateData.id != undefined &&
-                            templateData.custom &&
-                            code != templateData.code ? (
-                                <li style={{ marginLeft: "10px" }}>
-                                    <FontAwesomeIcon
-                                        icon={faFloppyDisk}
-                                        style={{
-                                            ...iconStyle, 
-                                            ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "#888787"})
-                                        }}
-                                        onClick={() => {
-                                            updateTemplate({
-                                                ...templateData,
-                                                code: code,
-                                            });
-                                        }}
-                                    />
-                                </li>
-                            ) : null}
-                        </ul>
-                    </Row>
+                            title={pinnedToDashboard ? "Unpin from dashboard" : "Pin to dashboard"}
+                            onClick={() => updatePin(nodeId, pinnedToDashboard)}
+                        />
+                        <FontAwesomeIcon
+                            icon={faComments}
+                            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                            title="Comments"
+                            onClick={() => setShowComments(!showComments)}
+                        />
+                        <FontAwesomeIcon
+                            icon={faXmark}
+                            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                            title="Delete node"
+                            onClick={onDelete}
+                        />
+                        {updateTemplate != undefined && code != undefined && templateData.id != undefined && templateData.custom && code != templateData.code ? (
+                            <FontAwesomeIcon
+                                icon={faFloppyDisk}
+                                style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                                title="Save template"
+                                onClick={() => updateTemplate({ ...templateData, code: code })}
+                            />
+                        ) : null}
+                    </div>
                 ) : null}
 
                 <div style={{height: "calc(100% - 35px)", width: "calc(100% - 30px)", marginLeft: "auto", marginRight: "auto"}}>
@@ -956,47 +921,6 @@ export const NodeContainer = ({
                     ) : null}
                 </Row>
 
-                {pinnedToDashboard ? (
-                    <FontAwesomeIcon
-                        icon={faCircleDot}
-                        style={{
-                            ...{
-                                color: "red",
-                                cursor: "pointer",
-                                fontSize: "10px",
-                                position: "fixed",
-                                top: "12px",
-                                left: "10px",
-                                zIndex: 11,
-                            },
-                            ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
-                        }}
-                        onClick={() => {
-                            updatePin(nodeId, pinnedToDashboard);
-                        }}
-                    />
-                ) : (
-                    <FontAwesomeIcon
-                        style={{
-                            ...{
-                                color: "888",
-                                cursor: "pointer",
-                                fontSize: "10px",
-                                position: "fixed",
-                                top: "12px",
-                                left: "10px",
-                                zIndex: 11,
-                            },
-                            ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {color: "888"}),
-                            ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
-                        }}
-                        icon={faCircle}
-                        onClick={() => {
-                            updatePin(nodeId, pinnedToDashboard);
-                        }}
-                    />
-                )}
-
                 {
                     !(data.suggestionType != "none" && data.suggestionType != undefined) ?
                     <RightClickMenu
@@ -1022,13 +946,13 @@ export const NodeContainer = ({
                         ...{
                             width: currentNodeWidth + "px",
                             height: currentNodeHeight + "px",
-                            backgroundColor: "white",
-                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+                            backgroundColor: "#ffffff",
                             borderRadius: "10px",
                             padding: "5px",
                             justifyContent: "center",
                             display: "flex",
                             alignItems: "center",
+                            boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
                         },
                         ...((data.suggestionType != "none" && data.suggestionType != undefined) ? {pointerEvents: "none"} : {})
                     }}
@@ -1041,7 +965,7 @@ export const NodeContainer = ({
                             }
 
                             if (nodeHeight == undefined) {
-                                setCurrentNodeHeight(267);
+                                setCurrentNodeHeight(350);
                             } else {
                                 setCurrentNodeHeight(nodeHeight);
                             }
@@ -1061,25 +985,19 @@ export const NodeContainer = ({
                 </div>
             ) : null}
 
-            <FontAwesomeIcon
-                icon={!minimized ? faMinus : faUpRightAndDownLeftFromCenter}
-                style={{
-                    ...iconStyle,
-                    position: "fixed",
-                    ...(minimized
-                        ? { top: "5px", left: "5px" }
-                        : { left: "50px", top: "12px" }),
-                    fontSize: "10px",
-                    zIndex: 8,
-                }}
-                onClick={() => {
-                    if (data.nodeType == NodeType.MERGE_FLOW) {
-                        setMinimized(true);
-                    } else {
-                        setMinimized(!minimized);
-                    }
-                }}
-            />
+            {noContent ? (
+                <FontAwesomeIcon
+                    icon={faUpRightAndDownLeftFromCenter}
+                    style={{
+                        ...headerIconStyle,
+                        position: "fixed",
+                        top: "5px",
+                        left: "5px",
+                        zIndex: 8,
+                    }}
+                    onClick={() => setMinimized(false)}
+                />
+            ) : null}
         </>
     );
 };
@@ -1090,13 +1008,40 @@ export const iconStyle: CSS.Properties = {
     color: "#888787",
 };
 
-const nodeContainerStyles: CSS.Properties = {
+const headerIconStyle: CSS.Properties = {
+    cursor: "pointer",
+    fontSize: "11px",
+    color: "#888787",
+    flexShrink: 0,
+};
+
+const nodeTypeBorderColor: Record<string, string> = {
+    [NodeType.DATA_LOADING]: "#3498db",
+    [NodeType.DATA_EXPORT]: "#3498db",
+    [NodeType.DATA_CLEANING]: "#3498db",
+    [NodeType.DATA_TRANSFORMATION]: "#3498db",
+    [NodeType.DATA_SUMMARY]: "#3498db",
+    [NodeType.COMPUTATION_ANALYSIS]: "#8e44ad",
+    [NodeType.FLOW_SWITCH]: "#8e44ad",
+    [NodeType.MERGE_FLOW]: "#8e44ad",
+    [NodeType.DATA_POOL]: "#8e44ad",
+    [NodeType.CONSTANTS]: "#8e44ad",
+    [NodeType.VIS_UTK]: "#1abc9c",
+    [NodeType.VIS_VEGA]: "#1abc9c",
+    [NodeType.VIS_TABLE]: "#1abc9c",
+    [NodeType.VIS_TEXT]: "#1abc9c",
+    [NodeType.VIS_IMAGE]: "#1abc9c",
+    [NodeType.COMMENTS]: "#95a5a6",
+};
+
+const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     position: "relative",
-    backgroundColor: "white",
-    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+    backgroundColor: "#ffffff",
+    borderLeft: `4px solid ${nodeTypeBorderColor[nodeType] ?? "#95a5a6"}`,
     borderRadius: "10px",
     padding: "5px",
-};
+    boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
+});
 
 export const RightClickMenu = ({
     showMenu,

@@ -92,11 +92,22 @@ class TestWorkflowCanvas:
             node_el = self._node_locator(node)
             node_el.scroll_into_view_if_needed()
 
-            # if Pool node wait for data table to show
+            # if Pool node activate output tab then wait for data table to show
             if node.type == "DATA_POOL":
+                # DATA_POOL's table lives inside the NodeEditor output tab pane.
+                # Click the output nav button first so the pane becomes visible.
+                output_tab = node_el.locator(
+                    '.nav-link[data-rr-ui-event-key="output"]'
+                )
+                output_tab.first.wait_for(state="visible", timeout=10000)
+                is_active = "active" in (
+                    output_tab.first.get_attribute("class") or ""
+                )
+                if not is_active:
+                    output_tab.first.click(force=True)
                 data_table = node_el.locator("td.MuiTableCell-root")
-                data_table.first.wait_for(state="visible", timeout=10000)
-                time.sleep(5)
+                data_table.first.wait_for(state="visible", timeout=15000)
+                time.sleep(2)
                 assert data_table.count() >= 1, (
                     f"DataPool node {node.id} ({node.type}) is missing its "
                     f"data table"
@@ -115,37 +126,27 @@ class TestWorkflowCanvas:
             # # wait for loading spinner to disappear
             # loading_spinner.wait_for(state="hidden", timeout=10000)
 
-            # Wait until either "Done" or "Error" is visible
-            node_el.locator("span").filter(
+            # Wait until either "Done" or "Error" is visible, then fail fast on Error
+            result_span = node_el.locator("span").filter(
                 has_text=re.compile(r"^(Done|Error)$")
-            ).first.wait_for(state="visible", timeout=1000000)
+            ).first
+            result_span.wait_for(state="visible", timeout=30000)
+            result_text = result_span.text_content() or ""
+            assert "Error" not in result_text, (
+                f"Node {node.id} ({node.type}) execution failed with Error"
+            )
 
-            # Wait for the execution outcome (up to 30 s)
             done_span = node_el.locator("span").filter(has_text=re.compile(r"^Done$"))
-            error_span = node_el.locator("span").filter(has_text=re.compile(r"^Error$"))
-            done_span.first.wait_for(state="visible", timeout=1000000)
-
             assert done_span.count() >= 1, (
-                f"Node {node.id} ({node.type}) did not produce 'Done' — "
-                f"error visible: {error_span.is_visible()}"
+                f"Node {node.id} ({node.type}) did not produce 'Done'"
             )
-            # Check if output tab is active
 
-            # wait for output tab to be visible
-            output_tab = node_el.locator(
-                '.nav-link[data-rr-ui-event-key="output"]'
-            )
-            output_tab.first.wait_for(state="visible", timeout=100000)
-            assert output_tab.count() >= 1, (
-                f"Code node {node.id} ({node.type}) is missing its "
-                f"output tab"
-            )
-            if output_tab.count() >= 1:
-                # Check if the output content box is active
-                is_active = "active" in (output_tab.get_attribute("class") or "")
-                assert is_active, (
-                    f"Output content box {node.id} ({node.type}) is not active"
-                )
+            # verify the inline output area shows a Jupyter-style counter (code nodes only)
+            if node.category == "code":
+                output_area = node_el.locator(".nowheel.nodrag").filter(
+                    has_text=re.compile(r"\[\d+\]:")
+                ).first
+                output_area.wait_for(state="visible", timeout=10000)
         self.__class__._executed_workflow = self.spec.filepath
 
     # -- 1. Node & edge counts --------------------------------------------
@@ -153,6 +154,11 @@ class TestWorkflowCanvas:
     def test_node_and_edge_count(self, loaded_workflow, request):
         """The canvas must contain the exact number of nodes and edges
         declared in the workflow JSON."""
+        # Guard against a brief React re-render cycle after workflow upload
+        self.page.wait_for_function(
+            f"document.querySelectorAll('.react-flow__node').length >= {self.spec.nodes_count}",
+            timeout=15000,
+        )
         node_els = self.page.locator(".react-flow__node")
         edge_els = self.page.locator(".react-flow__edge")
 
@@ -173,6 +179,10 @@ class TestWorkflowCanvas:
         """Every node must be rendered on the canvas, and relative
         x-positions from the JSON specification must be preserved
         (``fitView`` rescales but keeps the layout)."""
+        self.page.wait_for_function(
+            f"document.querySelectorAll('.react-flow__node').length >= {self.spec.nodes_count}",
+            timeout=15000,
+        )
         positions: dict[str, tuple[float, float]] = {}
 
         for node in self.spec.nodes:
@@ -211,6 +221,10 @@ class TestWorkflowCanvas:
         * **datapool** nodes – the data-tabs element (``#data-tabs``)
         * **passive** nodes – just the node container (no editor expected)
         """
+        self.page.wait_for_function(
+            f"document.querySelectorAll('.react-flow__node').length >= {self.spec.nodes_count}",
+            timeout=15000,
+        )
         for node in self.spec.nodes:
             node_el = self._node_locator(node)
             assert node_el.count() == 1, (
@@ -219,77 +233,22 @@ class TestWorkflowCanvas:
 
             if node.category == "code":
 
-                # 1. Check if the output tab is present (always rendered in NodeEditor)
-                output_tab = node_el.locator(
-                    '.nav-link[data-rr-ui-event-key="output"]'
+                # 1. Check that the inline output area (below the Monaco editor)
+                #    is present and shows the initial "No output yet" placeholder.
+                output_area = node_el.locator(".nowheel.nodrag").filter(
+                    has_text=re.compile(r"\[[ ]\]:")
                 )
-
-                assert output_tab.count() >= 1, (
+                assert output_area.count() >= 1, (
                     f"Code node {node.id} ({node.type}) is missing its "
-                    f"output tab"
+                    f"inline output area"
                 )
-                if output_tab.count() >= 1:
-                    # Check if the output content box is active
-                    is_active = "active" in (output_tab.get_attribute("class") or "")
-                    assert is_active, (
-                        f"Output content box {node.id} ({node.type}) is not active"
-                    )
-                    if not is_active:
-                        output_tab.click(force=True)
-                        output_tab.wait_for(state="visible", timeout=3000)
-                    
-                    # OutputContent renders #computation-tabs-tab- with
-                    # Output / Error / Warning sub-tabs.
-                    computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
-
-                    if computation_tabs.count() >= 1:
-                        # and should contain a div with classes tab-pane and active
-                        active_pane = node_el.locator(".tab-pane.active")
-                        assert active_pane.count() >= 1, (
-                            f"Code node {node.id} ({node.type}) output "
-                            f"area has no active tab-pane"
-                        )
-                        # the output tab content has class tab-content
-                        tab_content = active_pane.locator(".tab-content")
-                        # wait for the tab-content to be visible
-                        tab_content.wait_for(state="visible", timeout=3000)
-                        assert tab_content.count() >= 1, (
-                            f"Code node {node.id} ({node.type}) output "
-                            f"area is missing .tab-content"
-                        )
-                        # and should contain a title h6 with text "Output"
-                        output_heading = tab_content.locator("h6").filter(
-                            has_text="Output"
-                        )
-                        assert output_heading.count() >= 1, (
-                            f"Code node {node.id} ({node.type}) active "
-                            f"output pane is missing 'Output' heading"
-                        )
-                        # and should contain a div below the h6 with
-                        # text "No output available."
-                        no_output_msg = tab_content.locator("div").filter(
-                            has_text="No output available."
-                        )
-                        assert no_output_msg.count() >= 1, (
-                            f"Code node {node.id} ({node.type}) active "
-                            f"output pane is missing 'No output available.'"
-                        )
-                        # and should not contain a title h6 with text "Error"
-                        error_heading = tab_content.locator("h6").filter(
-                            has_text="Error"
-                        )
-                        assert error_heading.count() == 0, (
-                            f"Code node {node.id} ({node.type}) active "
-                            f"output pane should not contain 'Error' heading"
-                        )
-                        # and should not contain a title h6 with text "Warning"
-                        warning_heading = tab_content.locator("h6").filter(
-                            has_text="Warning"
-                        )
-                        assert warning_heading.count() == 0, (
-                            f"Code node {node.id} ({node.type}) active "
-                            f"output pane should not contain 'Warning' heading"
-                        )
+                no_output_text = node_el.locator(".nowheel.nodrag").filter(
+                    has_text="No output yet"
+                )
+                assert no_output_text.count() >= 1, (
+                    f"Code node {node.id} ({node.type}) inline output area "
+                    f"is missing 'No output yet' placeholder"
+                )
                 
                 if node.type in CODE_EDITOR_TYPES:
                     # 2. Check if the code tab is rendered
@@ -436,278 +395,253 @@ class TestWorkflowCanvas:
             )
 
             # ---------------------------------------------------------------
-            # Check output tab is active and rendered correctly
+            # Check output area (inline for code nodes; output tab for grammar)
             # ---------------------------------------------------------------
 
-            # wait for output tab to be visible
-            output_tab = node_el.locator(
-                '.nav-link[data-rr-ui-event-key="output"]'
-            )
-            output_tab.first.wait_for(state="visible", timeout=10000)
-            assert output_tab.count() >= 1, (
-                f"Code node {node.id} ({node.type}) is missing its "
-                f"output tab"
-            )
-            if output_tab.count() >= 1:
-                # Check if the output content box is active
-                is_active = "active" in (output_tab.get_attribute("class") or "")
-                if not is_active:
-                    output_tab.click(force=True)
-                    output_tab.wait_for(state="visible", timeout=3000)
-                assert is_active, (
-                    f"Output content box {node.id} ({node.type}) is not active"
+            if node.category == "code":
+                # Since commit d8050b0 code nodes no longer have a separate output
+                # tab – the execution result is shown inline inside CodeEditor as
+                # a ".nowheel.nodrag" div with a Jupyter-style "[N]:" counter.
+                output_area = node_el.locator(".nowheel.nodrag").filter(
+                    has_text=re.compile(r"\[\d+\]:")
                 )
-                
-                # OutputContent renders #computation-tabs-tab- with
-                # Output / Error / Warning sub-tabs.
-                computation_tabs = node_el.locator(f"#computation-tabs-tab-0")
+                output_area.first.wait_for(state="visible", timeout=10000)
+                assert output_area.count() >= 1, (
+                    f"Code node {node.id} ({node.type}) is missing its "
+                    f"inline output counter after execution"
+                )
 
-                if computation_tabs.count() >= 1:
-                    # and should contain a div with classes tab-pane and active
-                    active_pane = node_el.locator(".tab-pane.active")
-                    assert active_pane.count() >= 1, (
-                        f"Code node {node.id} ({node.type}) output "
-                        f"area has no active tab-pane"
-                    )
-                    # the output tab content has class tab-content
-                    tab_content = active_pane.locator(".tab-content")
-                    # wait for the tab-content to be visible
-                    tab_content.wait_for(state="visible", timeout=3000)
-                    assert tab_content.count() >= 1, (
-                        f"Code node {node.id} ({node.type}) output "
-                        f"area is missing .tab-content"
-                    )
-                    # The output box should contain a title h6 with text "Output" 
-                    output_heading = tab_content.locator("h6").filter(
-                        has_text="Output"
-                    )
-                    output_heading.first.wait_for(state="visible", timeout=10000)
-                    assert output_heading.count() >= 1, (
-                        f"Node {node.id} ({node.type}) is missing its "
-                        f"output heading"
-                    )
-                    # and should not contain a div below the h6 with text "No output available."
-                    no_output_msg = tab_content.locator("div").filter(
-                        has_text="No output available."
-                    )
-                    no_output_msg.first.wait_for(state="hidden", timeout=10000)
-                    assert no_output_msg.count() == 0, (
-                        f"Node {node.id} ({node.type}) is not missing its "
-                        f"no output message"
-                    )
-                    # and should not contain a title h6 with text "Error"
-                    error_heading = tab_content.locator("h6").filter(
-                        has_text="Error"
-                    )
-                    error_heading.first.wait_for(state="hidden", timeout=10000)
-                    assert error_heading.count() == 0, (
-                        f"Node {node.id} ({node.type}) is not missing its "
-                        f"error heading"
-                    )
-                    # and should not contain a title h6 with text "Warning"
-                    warning_heading = tab_content.locator("h6").filter(
-                        has_text="Warning"
-                    )
-                    warning_heading.first.wait_for(state="hidden", timeout=10000)
-                    assert warning_heading.count() == 0, (
-                        f"Node {node.id} ({node.type}) is not missing its "
-                        f"warning heading"
-                    )
-
-                    # ------------------------------------------------------------------------
-                    # Test the output tab pane content.
-                    # ------------------------------------------------------------------------
-                    # it should be a text with the output file path following the pattern: <uuid_regex>.data
-                    # output_content = tab_content.locator("div").filter(
-                    #     has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
-                    # )
-                    output_content = tab_content.locator("div").filter(
-                        has_text=re.compile(r"Saved to file\:\s\S+$")
-                    )
-                    output_content.first.wait_for(state="visible", timeout=10000)
-                    assert output_content.count() >= 1, (
-                        f"Node {node.id} ({node.type}) is missing its "
-                        f"output content"
-                    )
-
-                    # Verify .data file content against programmatic execution
-                    # data_file_name = output_content.first.evaluate(
-                    #     r"""(el) => {
-                    #         const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
-                    #         return match ? match[1] : null;
-                    #     }"""
-                    # )
-                    # assert data_file_name is not None, (
-                    #     f"Node {node.id} ({node.type}) is missing its data file path"
-                    # )
-
-                    # data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
-                    # assert os.path.exists(data_file_path), (
-                    #     f"Node {node.id} ({node.type}) is missing its data file"
-                    # )
-
-                    # if node.id in expected_map:
-                    #     actual = strip_volatile_keys(load_dot_data(data_file_path))
-                    #     expected = strip_volatile_keys(
-                    #         load_dot_data(expected_map[node.id])
-                    #     )
-                    #     if actual != expected:
-                    #         diff_keys = [
-                    #             k for k in set(actual) | set(expected)
-                    #             if actual.get(k) != expected.get(k)
-                    #         ]
-                    #         raise AssertionError(
-                    #             f"Node {node.id} ({node.type}) data file content "
-                    #             f"does not match the programmatic execution. "
-                    #             f"Differing top-level keys: {diff_keys}"
-                    #         )
-                    artifact_id = output_content.first.evaluate(
+                # If the inline output contains a data-file path, verify the
+                # file exists and matches the programmatic execution result.
+                data_output = node_el.locator(".nowheel.nodrag").filter(
+                    has_text=re.compile(r"Saved to file:\s\w+_\w+\.data")
+                )
+                if data_output.count() >= 1:
+                    data_file_name = data_output.first.evaluate(
                         r"""(el) => {
-                            const match = el.textContent.match(/Saved to file:\s(\S+)$/);
+                            const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)/);
                             return match ? match[1] : null;
                         }"""
                     )
-                    assert artifact_id is not None, (
-                        f"Node {node.id} ({node.type}) is missing its artifact id"
-                    )
-                    # The old test checked that a .data file exists on disk.  With DuckDB
-                    # there's no per-artifact file — successful load from the artifacts
-                    # table IS the existence proof.
-                    if node.id in expected_map:
-                        try:
-                            actual = load_artifact_as_dict(artifact_id)
-                            expected = load_artifact_as_dict(expected_map[node.id])
-                        except Exception as e:
-                            raise AssertionError(
-                                f"Node {node.id} ({node.type}) could not load artifact "
-                                f"from DuckDB: {e}"
+                    if data_file_name is not None:
+                        data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
+                        assert os.path.exists(data_file_path), (
+                            f"Node {node.id} ({node.type}) is missing its data file"
+                        )
+                        if node.id in expected_map:
+                            actual = strip_volatile_keys(load_dot_data(data_file_path))
+                            expected_data = strip_volatile_keys(
+                                load_dot_data(expected_map[node.id])
                             )
+                            if actual != expected_data:
+                                diff_keys = [
+                                    k for k in set(actual) | set(expected_data)
+                                    if actual.get(k) != expected_data.get(k)
+                                ]
+                                raise AssertionError(
+                                    f"Node {node.id} ({node.type}) data file content "
+                                    f"does not match the programmatic execution. "
+                                    f"Differing top-level keys: {diff_keys}"
+                                )
 
-                        if actual != expected:
-                            diff_keys = [
-                                k for k in set(actual) | set(expected)
-                                if actual.get(k) != expected.get(k)
-                            ]
-                            raise AssertionError(
-                                f"Node {node.id} ({node.type}) artifact content "
-                                f"does not match the programmatic execution. "
-                                f"Differing top-level keys: {diff_keys}"
+            elif node.category == "grammar":
+                # Grammar nodes (VIS_VEGA, VIS_UTK) keep a dedicated output tab
+                # because they pass outputId to NodeEditor.
+                output_tab = node_el.locator(
+                    '.nav-link[data-rr-ui-event-key="output"]'
+                )
+                output_tab.first.wait_for(state="visible", timeout=10000)
+                assert output_tab.count() >= 1, (
+                    f"Grammar node {node.id} ({node.type}) is missing its "
+                    f"output tab"
+                )
+                if output_tab.count() >= 1:
+                    # After execution NodeEditor auto-switches to the output tab.
+                    is_active = "active" in (output_tab.get_attribute("class") or "")
+                    if not is_active:
+                        output_tab.click(force=True)
+                        output_tab.wait_for(state="visible", timeout=3000)
+                    assert is_active, (
+                        f"Grammar node {node.id} ({node.type}) output tab "
+                        f"is not active after execution"
+                    )
+
+                    # OutputContent (computation-tabs) may still appear for some
+                    # grammar nodes that use contentComponent instead of outputId.
+                    computation_tabs = node_el.locator("#computation-tabs-tab-0")
+
+                    if computation_tabs.count() >= 1:
+                        active_pane = node_el.locator(".tab-pane.active")
+                        assert active_pane.count() >= 1, (
+                            f"Grammar node {node.id} ({node.type}) output "
+                            f"area has no active tab-pane"
+                        )
+                        tab_content = active_pane.locator(".tab-content")
+                        tab_content.wait_for(state="visible", timeout=3000)
+                        assert tab_content.count() >= 1, (
+                            f"Grammar node {node.id} ({node.type}) output "
+                            f"area is missing .tab-content"
+                        )
+                        output_heading = tab_content.locator("h6").filter(
+                            has_text="Output"
+                        )
+                        output_heading.first.wait_for(state="visible", timeout=10000)
+                        assert output_heading.count() >= 1, (
+                            f"Grammar node {node.id} ({node.type}) is missing its "
+                            f"output heading"
+                        )
+                        no_output_msg = tab_content.locator("div").filter(
+                            has_text="No output available."
+                        )
+                        no_output_msg.first.wait_for(state="hidden", timeout=10000)
+                        assert no_output_msg.count() == 0, (
+                            f"Grammar node {node.id} ({node.type}) still shows "
+                            f"'No output available.'"
+                        )
+                        output_content = tab_content.locator("div").filter(
+                            has_text=re.compile(r"Saved to file\:\s\w+_\w+.data$")
+                        )
+                        output_content.first.wait_for(state="visible", timeout=10000)
+                        assert output_content.count() >= 1, (
+                            f"Grammar node {node.id} ({node.type}) is missing its "
+                            f"output content"
+                        )
+                        data_file_name = output_content.first.evaluate(
+                            r"""(el) => {
+                                const match = el.textContent.match(/Saved to file:\s(\w+_\w+\.data)$/);
+                                return match ? match[1] : null;
+                            }"""
+                        )
+                        assert data_file_name is not None, (
+                            f"Grammar node {node.id} ({node.type}) is missing its data file path"
+                        )
+                        data_file_path = os.path.join(get_shared_data_dir(), data_file_name)
+                        assert os.path.exists(data_file_path), (
+                            f"Grammar node {node.id} ({node.type}) is missing its data file"
+                        )
+                        if node.id in expected_map:
+                            actual = strip_volatile_keys(load_dot_data(data_file_path))
+                            expected_data = strip_volatile_keys(
+                                load_dot_data(expected_map[node.id])
                             )
-                
-                
-                # ----------------------------------------------------------
-                # Test created SVG Vega-Lite visualizations
-                # ----------------------------------------------------------
-                if node.category == "grammar" and node.type == "VIS_VEGA":
-                    vega_container_id = f"vega{node.id}"
+                            if actual != expected_data:
+                                diff_keys = [
+                                    k for k in set(actual) | set(expected_data)
+                                    if actual.get(k) != expected_data.get(k)
+                                ]
+                                raise AssertionError(
+                                    f"Grammar node {node.id} ({node.type}) data file "
+                                    f"content does not match programmatic execution. "
+                                    f"Differing top-level keys: {diff_keys}"
+                                )
 
-                    # A -- Verify SVG exists and is non-empty
-                    svg_locator = node_el.locator(f"#{vega_container_id} svg")
-                    svg_locator.first.wait_for(state="visible", timeout=15000)
-                    assert svg_locator.count() >= 1, (
-                        f"Grammar node {node.id} ({node.type}) is missing "
-                        f"its rendered SVG inside #{vega_container_id}"
-                    )
+                    # ----------------------------------------------------------
+                    # Test created SVG Vega-Lite visualizations
+                    # ----------------------------------------------------------
+                    if node.type == "VIS_VEGA":
+                        vega_container_id = f"vega{node.id}"
 
-                    # B -- Re-compile the spec programmatically and save
-                    #      the expected SVG (mirrors .data baseline pattern)
-                    spec_json = json.loads(
-                        node.content.replace("\r\n", "\n").replace("\r", "\n")
-                    )
+                        # A -- Verify SVG exists and is non-empty
+                        svg_locator = node_el.locator(f"#{vega_container_id} svg")
+                        svg_locator.first.wait_for(state="visible", timeout=15000)
+                        assert svg_locator.count() >= 1, (
+                            f"Grammar node {node.id} ({node.type}) is missing "
+                            f"its rendered SVG inside #{vega_container_id}"
+                        )
 
-                    upstream_ids = self.spec.upstream_nodes(node.id)
-                    vega_values: list[dict] = []
-                    for uid in upstream_ids:
-                        candidate = uid
-                        visited: set[str] = set()
-                        while candidate and candidate not in expected_map:
-                            visited.add(candidate)
-                            parents = self.spec.upstream_nodes(candidate)
-                            candidate = next(
-                                (p for p in parents if p not in visited),
-                                None,
-                            )
-                        # if candidate and candidate in expected_map:
-                        #     upstream_data = load_dot_data(
-                        #         expected_map[candidate]
-                        #     )
-                        #     vega_values = dot_data_to_vega_values(upstream_data)
-                        #     break
-                        if candidate and candidate in expected_map:
-                            upstream_data = load_artifact_as_dict(
-                                expected_map[candidate]
-                            )
-                            vega_values = dot_data_to_vega_values(upstream_data)
-                            break
+                        # B -- Re-compile the spec programmatically and save
+                        #      the expected SVG (mirrors .data baseline pattern)
+                        spec_json = json.loads(
+                            node.content.replace("\r\n", "\n").replace("\r", "\n")
+                        )
 
-                    container_dims = self.page.evaluate(
-                        """(containerId) => {
-                            const el = document.getElementById(containerId);
-                            if (!el) return null;
-                            return {
-                                width: el.clientWidth,
-                                height: el.clientHeight
-                            };
-                        }""",
-                        vega_container_id,
-                    )
+                        upstream_ids = self.spec.upstream_nodes(node.id)
+                        vega_values: list[dict] = []
+                        for uid in upstream_ids:
+                            candidate = uid
+                            visited: set[str] = set()
+                            while candidate and candidate not in expected_map:
+                                visited.add(candidate)
+                                parents = self.spec.upstream_nodes(candidate)
+                                candidate = next(
+                                    (p for p in parents if p not in visited),
+                                    None,
+                                )
+                            if candidate and candidate in expected_map:
+                                upstream_data = load_dot_data(
+                                    expected_map[candidate]
+                                )
+                                vega_values = dot_data_to_vega_values(upstream_data)
+                                break
 
-                    expected_svg = self.page.evaluate(
-                        """({ spec, values, dims }) => {
-                            const vega = window.__curio_vega;
-                            const lite = window.__curio_vegaLite;
-                            if (!vega || !lite) return null;
-                            spec.data = { values: values, name: 'data' };
-                            spec.width = dims ? dims.width : 300;
-                            spec.height = dims ? dims.height : 200;
-                            const vegaSpec = lite.compile(spec).spec;
-                            const view = new vega.View(vega.parse(vegaSpec))
-                                .renderer('svg')
-                                .initialize(document.createElement('div'));
-                            return view.runAsync().then(() => view.toSVG());
-                        }""",
-                        {
-                            "spec": spec_json,
-                            "values": vega_values,
-                            "dims": container_dims,
-                        },
-                    )
-                    assert expected_svg is not None, (
-                        f"Grammar node {node.id} ({node.type}): "
-                        f"programmatic Vega-Lite re-compilation returned null "
-                        f"(window.__curio_vega / __curio_vegaLite missing?)"
-                    )
+                        container_dims = self.page.evaluate(
+                            """(containerId) => {
+                                const el = document.getElementById(containerId);
+                                if (!el) return null;
+                                return {
+                                    width: el.clientWidth,
+                                    height: el.clientHeight
+                                };
+                            }""",
+                            vega_container_id,
+                        )
 
-                    dataflow_name = os.path.splitext(
-                        os.path.basename(self.spec.filepath)
-                    )[0]
-                    save_expected_svg(dataflow_name, node.id, expected_svg)
+                        expected_svg = self.page.evaluate(
+                            """({ spec, values, dims }) => {
+                                const vega = window.__curio_vega;
+                                const lite = window.__curio_vegaLite;
+                                if (!vega || !lite) return null;
+                                spec.data = { values: values, name: 'data' };
+                                spec.width = dims ? dims.width : 300;
+                                spec.height = dims ? dims.height : 200;
+                                const vegaSpec = lite.compile(spec).spec;
+                                const view = new vega.View(vega.parse(vegaSpec))
+                                    .renderer('svg')
+                                    .initialize(document.createElement('div'));
+                                return view.runAsync().then(() => view.toSVG());
+                            }""",
+                            {
+                                "spec": spec_json,
+                                "values": vega_values,
+                                "dims": container_dims,
+                            },
+                        )
+                        assert expected_svg is not None, (
+                            f"Grammar node {node.id} ({node.type}): "
+                            f"programmatic Vega-Lite re-compilation returned null "
+                            f"(window.__curio_vega / __curio_vegaLite missing?)"
+                        )
 
-                    # C -- Extract the actual SVG from the DOM
-                    actual_svg = self.page.evaluate(
-                        """(containerId) => {
-                            const el = document.getElementById(containerId);
-                            if (!el) return null;
-                            const svg = el.querySelector('svg');
-                            return svg ? svg.outerHTML : null;
-                        }""",
-                        vega_container_id,
-                    )
-                    assert actual_svg is not None, (
-                        f"Grammar node {node.id} ({node.type}): "
-                        f"could not extract SVG from #{vega_container_id}"
-                    )
+                        dataflow_name = os.path.splitext(
+                            os.path.basename(self.spec.filepath)
+                        )[0]
+                        save_expected_svg(dataflow_name, node.id, expected_svg)
 
-                    # D -- Structural comparison
-                    diffs = compare_svg_structure(
-                        actual_svg,
-                        expected_svg,
-                    )
-                    assert not diffs, (
-                        f"Grammar node {node.id} ({node.type}) SVG "
-                        f"structural mismatch:\n"
-                        + "\n".join(f"  - {d}" for d in diffs)
-                    )
+                        # C -- Extract the actual SVG from the DOM
+                        actual_svg = self.page.evaluate(
+                            """(containerId) => {
+                                const el = document.getElementById(containerId);
+                                if (!el) return null;
+                                const svg = el.querySelector('svg');
+                                return svg ? svg.outerHTML : null;
+                            }""",
+                            vega_container_id,
+                        )
+                        assert actual_svg is not None, (
+                            f"Grammar node {node.id} ({node.type}): "
+                            f"could not extract SVG from #{vega_container_id}"
+                        )
+
+                        # D -- Structural comparison
+                        diffs = compare_svg_structure(
+                            actual_svg,
+                            expected_svg,
+                        )
+                        assert not diffs, (
+                            f"Grammar node {node.id} ({node.type}) SVG "
+                            f"structural mismatch:\n"
+                            + "\n".join(f"  - {d}" for d in diffs)
+                        )
 
         self._save_screenshot(request)
 

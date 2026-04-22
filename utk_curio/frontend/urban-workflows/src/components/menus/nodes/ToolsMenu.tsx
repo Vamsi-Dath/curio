@@ -1,11 +1,11 @@
-import React from "react";
+import React, { memo } from "react";
 import { NodeType } from "../../../constants";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { Tooltip, OverlayTrigger } from "react-bootstrap";
 import { getPaletteNodeTypes } from "../../../registry";
 import styles from "./ToolsMenu.module.css";
 
-function DraggableTool({ nodeType, icon, tooltip, tutorialID}: { nodeType: NodeType; icon: any; tooltip: string; tutorialID?: string }) {
+const DraggableTool = memo(function DraggableTool({ nodeType, icon, tooltip, tutorialID}: { nodeType: NodeType; icon: any; tooltip: string; tutorialID?: string }) {
     return (
         <OverlayTrigger
             placement="right"
@@ -25,9 +25,9 @@ function DraggableTool({ nodeType, icon, tooltip, tutorialID}: { nodeType: NodeT
             </div>
         </OverlayTrigger>
     );
-}
+});
 
-export default function ToolsMenu() {
+const ToolsMenu = memo(function ToolsMenu() {
     const paletteTypes = getPaletteNodeTypes();
     return (
         <div>
@@ -44,7 +44,9 @@ export default function ToolsMenu() {
             </div>
         </div>
     );
-}
+});
+
+export default ToolsMenu;
 
 const overlayTriggerProps = {
     show: 120,

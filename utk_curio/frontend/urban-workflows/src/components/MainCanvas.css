@@ -1,3 +1,17 @@
+html, body {
+    overflow: hidden;
+}
+
+/* Promote the panning layer to a GPU compositor layer in Firefox */
+.react-flow__viewport {
+    will-change: transform;
+}
+
+/* Isolate the ReactFlow renderer so fixed-position overlays don't force repaints */
+.react-flow__renderer {
+    isolation: isolate;
+}
+
 path.react-flow__edge-path {
     stroke-width: 3;
 }

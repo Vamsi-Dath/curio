@@ -16,6 +16,7 @@ import {
   faCube,
   faChartLine,
   faCopy,
+  faRectangleList,
 } from '@fortawesome/free-solid-svg-icons';
 
 import { registerNode } from './nodeRegistry';
@@ -36,6 +37,7 @@ import {
   useFlowSwitchLifecycle,
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
+  useDataSummaryLifecycle,
 } from '../adapters/node';
 
 const ALL_TYPES = [
@@ -212,6 +214,31 @@ registerNode({
     outputIconType: 'N',
     showTemplateModal: true,
     useLifecycle: useCodeNodeLifecycle,
+  },
+});
+
+registerNode({
+  id: NodeType.DATA_SUMMARY,
+  category: 'computation',
+  label: 'Data Summary',
+  icon: faRectangleList,
+  inputPorts: [{ types: TABULAR_DATA, cardinality: '1' }],
+  outputPorts: [{ types: [SupportedType.JSON], cardinality: '1' }],
+  editor: 'code',
+  inPalette: true,
+  paletteOrder: 10,
+  description: 'The Data Summary node computes descriptive statistics and schema information (shape, dtypes, missing values, describe) for a DataFrame.',
+  hasCode: true,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: standardInOut(),
+    editor: { code: true, grammar: false, widgets: true },
+    container: { handleType: 'in/out' },
+    inputIconType: '1',
+    outputIconType: '1',
+    showTemplateModal: true,
+    useLifecycle: useDataSummaryLifecycle,
   },
 });
 

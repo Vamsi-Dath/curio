@@ -3,11 +3,13 @@ import { NodeLifecycleHook } from '../../registry/types';
 import { NodeType, VisInteractionType } from '../../constants';
 import { useProvenanceContext } from '../../providers/ProvenanceProvider';
 import { useFlowContext } from '../../providers/FlowProvider';
+import { useToastContext } from '../../providers/ToastProvider';
 import { fetchData } from '../../services/api';
 import { formatDate, mapTypes } from '../../utils/formatters';
 import ImageGrid from './components/ImageGrid';
 
 export const useImageLifecycle: NodeLifecycleHook = (data, nodeState) => {
+  const { showToast } = useToastContext();
   const [interactions, _setInteractions] = useState<any>({});
   const interactionsRef = React.useRef(interactions);
   const setInteractions = (newData: any) => {
@@ -46,7 +48,7 @@ export const useImageLifecycle: NodeLifecycleHook = (data, nodeState) => {
             parsedInput = await fetchData(parsedInput.path);
           } catch (err) {
             console.error('Failed to fetch image data:', err);
-            alert('Error fetching image data. Please try again.');
+            showToast('Error fetching image data. Please try again.', 'error');
             return;
           }
         }
@@ -56,7 +58,7 @@ export const useImageLifecycle: NodeLifecycleHook = (data, nodeState) => {
           !parsedInput.data?.image_id ||
           !parsedInput.data?.image_content
         ) {
-          alert("Image needs a DataFrame with 'image_id' and 'image_content' columns.");
+          showToast("Image needs a DataFrame with 'image_id' and 'image_content' columns.", 'error');
           dataInputBypass.current = true;
           return;
         }
