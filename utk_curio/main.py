@@ -92,7 +92,7 @@ def stream_output(process, name, color):
         if process.stderr:
             process.stderr.close()
 
-def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, no_auth=True, no_projects=False, deploy=False):
+def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_port, auth=False, no_project=False, deploy=False):
     """Sets the environment variables for Backend and Sandbox."""
     os.environ["FLASK_BACKEND_HOST"] = backend_host
     os.environ["FLASK_BACKEND_PORT"] = str(backend_port)
@@ -112,8 +112,8 @@ def set_environment_variables(backend_host, backend_port, sandbox_host, sandbox_
         os.environ["CURIO_NO_AUTH"] = "0"
         os.environ["CURIO_NO_PROJECT"] = "0"
     else:
-        os.environ["CURIO_NO_AUTH"] = "1" if no_auth else "0"
-        os.environ["CURIO_NO_PROJECT"] = "1" if no_projects else "0"
+        os.environ["CURIO_NO_AUTH"] = "0" if auth else "1"
+        os.environ["CURIO_NO_PROJECT"] = "1" if no_project else "0"
 
     log_always(f"Environment Variables Set:")
     log_always(f"FLASK_BACKEND_HOST={os.environ['FLASK_BACKEND_HOST']}")
@@ -538,11 +538,11 @@ def main():
         "--verbose", type=int, default=1, help="Verbosity level (e.g., 0=silent, 1=normal, 2=debug)"
     )
     parser.add_argument(
-        "--no-auth", action="store_true", default=True,
-        help="Disable authentication (sets CURIO_NO_AUTH=1, default)"
+        "--auth", action="store_true", default=False,
+        help="Enable authentication (sets CURIO_NO_AUTH=0)"
     )
     parser.add_argument(
-        "--no-projects", action="store_true", default=False,
+        "--no-project", action="store_true", default=False,
         help="Disable projects (sets CURIO_NO_PROJECT=1)"
     )
     parser.add_argument(
@@ -574,8 +574,8 @@ def main():
         backend_port=args.backend_port,
         sandbox_host=args.sandbox_host,
         sandbox_port=args.sandbox_port,
-        no_auth=args.no_auth,
-        no_projects=args.no_projects,
+        auth=args.auth,
+        no_project=args.no_project,
         deploy=args.deploy,
     )
 
