@@ -14,7 +14,7 @@ def _now():
 
 class Project(db.Model):
     id = db.Column(db.String(36), primary_key=True, default=_uuid)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     name = db.Column(db.String(200), nullable=False)
     slug = db.Column(db.String(240), nullable=False)
     description = db.Column(db.Text, nullable=True)
@@ -27,6 +27,17 @@ class Project(db.Model):
     updated_at = db.Column(db.DateTime, default=_now, onupdate=_now, nullable=False)
 
     owner = db.relationship("User", backref=db.backref("projects", lazy="dynamic"))
+
+    # Mirrors migration b2c3d4e5f6a7. Leading column is user_id, so single-
+    # column lookups by user_id use this index too — no separate ix_project_user_id needed.
+    __table_args__ = (
+        db.Index(
+            "ix_project_user_archived_opened",
+            "user_id",
+            "archived_at",
+            db.text("last_opened_at DESC"),
+        ),
+    )
 
     def __repr__(self):
         return f"<Project {self.id!r} {self.name!r}>"

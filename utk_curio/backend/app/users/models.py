@@ -61,3 +61,9 @@ class AuthAttempt(db.Model):
     created_at = db.Column(
         db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False
     )
+
+    # Mirrors migration a1b2c3d4e5f6 so model-vs-DB autogen stays clean.
+    __table_args__ = (
+        db.Index("ix_auth_attempt_ip_created", "ip", "created_at"),
+        db.Index("ix_auth_attempt_ident_created", "identifier", "created_at"),
+    )
