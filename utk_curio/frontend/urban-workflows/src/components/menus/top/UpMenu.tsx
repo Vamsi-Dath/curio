@@ -8,7 +8,6 @@ import {
     useFlowContext,
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
-import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { TrillGenerator } from "../../../TrillGenerator";
 import { TrillNotebookConverter } from "../../../NotebookConvertor";
@@ -71,6 +70,8 @@ export default function UpMenu({
         saveAsNewProject,
         discardProject,
         packages,
+        nodes,
+        edges,
     } = useFlowContext();
     const {
         workflowName,
@@ -80,7 +81,6 @@ export default function UpMenu({
         expandStatus,
         setExpandStatus,
     } = useNodeActionsContext();
-    const { getNodes, getEdges } = useReactFlow();
     const { loadTrill } = useCode();
 
     const toggleMenu = (menu: string) => {
@@ -180,7 +180,7 @@ export default function UpMenu({
     };
 
     const exportNotebook = () => {
-        const trill_spec = TrillGenerator.generateTrill(getNodes(), getEdges(), workflowNameRef.current, "", packages);
+        const trill_spec = TrillGenerator.generateTrill(nodes, edges, workflowNameRef.current, "", packages);
         const converter = new TrillNotebookConverter();
         const notebook = converter.trillToNotebook(trill_spec);
         const notebookContent = converter.serializeNotebook(notebook);
