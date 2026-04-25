@@ -9,6 +9,8 @@ import {
     useNodeActionsContext,
 } from "../../../providers/FlowProvider";
 import { useCode } from "../../../hook/useCode";
+import { TrillGenerator } from "../../../TrillGenerator";
+import { trillToNotebook, serializeNotebook } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
 import clsx from "clsx";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
@@ -16,6 +18,7 @@ import {
     faCubes,
     faDatabase,
     faFileImport,
+    faFileExport,
     faFolderOpen,
     faFloppyDisk,
     faPlus,
@@ -65,6 +68,8 @@ export default function UpMenu({
         saveAsNewProject,
         discardProject,
         packages,
+        nodes,
+        edges,
     } = useFlowContext();
     const {
         workflowName,
@@ -201,6 +206,27 @@ export default function UpMenu({
         }
     };
 
+    const exportAsJupyterNotebook = () => {
+        const trillSpec = TrillGenerator.generateTrill(
+            nodes,
+            edges,
+            workflowNameRef.current,
+            "",
+            packages,
+        );
+        const notebook = trillToNotebook(trillSpec);
+        const content = serializeNotebook(notebook);
+        const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${workflowNameRef.current}.ipynb`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        setActiveMenu(null);
+    };
+
     const loadTrillFile = () => {
         setActiveMenu(null);
         // Defer the click so the input is not unmounted before the dialog opens
@@ -320,28 +346,32 @@ export default function UpMenu({
                     </button>
                     {activeMenu === "file" && (
                         <div className={styles.dropDownMenu} onClick={(e) => e.stopPropagation()}>
-                            {!skipProjectPage && (
-                                <div className={styles.dropDownRow} onClick={handleNewWorkflow}>
-                                    <FontAwesomeIcon className={styles.dropDownIcon} icon={faPlus} />
-                                    <button className={styles.noStyleButton}>New dataflow</button>
-                                </div>
-                            )}
+                            <div className={styles.dropDownRow} onClick={handleNewWorkflow}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faPlus} />
+                                <button className={styles.noStyleButton}>New dataflow</button>
+                            </div>
                             <div className={styles.dropDownRow} onClick={loadTrillFile}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
                                 <button className={styles.noStyleButton}>Load dataflow</button>
                             </div>
                             {!skipProjectPage && (
+                                <div className={styles.dropDownRow} onClick={handleSave}>
+                                    <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
+                                    <button className={styles.noStyleButton} disabled={saving}>
+                                        {saving ? "Saving..." : "Save dataflow"}
+                                    </button>
+                                </div>
+                            )}
+                            <div className={styles.dropDownRow} onClick={handleSaveAs}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
+                                <button className={styles.noStyleButton}>Save dataflow as</button>
+                            </div>
+                            <div className={styles.dropDownRow} onClick={exportAsJupyterNotebook}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
+                                <button className={styles.noStyleButton}>Export as notebook</button>
+                            </div>
+                            {!skipProjectPage && (
                                 <>
-                                    <div className={styles.dropDownRow} onClick={handleSave}>
-                                        <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
-                                        <button className={styles.noStyleButton} disabled={saving}>
-                                            {saving ? "Saving..." : "Save dataflow"}
-                                        </button>
-                                    </div>
-                                    <div className={styles.dropDownRow} onClick={handleSaveAs}>
-                                        <FontAwesomeIcon className={styles.dropDownIcon} icon={faFloppyDisk} />
-                                        <button className={styles.noStyleButton}>Save dataflow as...</button>
-                                    </div>
                                     <div className={styles.dropDownDivider} />
                                     <div
                                         className={styles.dropDownRow}
