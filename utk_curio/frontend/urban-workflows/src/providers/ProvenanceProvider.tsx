@@ -245,13 +245,13 @@ const ProvenanceProvider = ({ children }: { children: ReactNode }) => {
                                 json["graph"];
                             added = true;
                         } else {
-                            // TODO: replicate array of objects
-                            newProvenanceGraphs[workflow][activity] =
-                                provenanceGraphNodesRef.current[workflow][
-                                    activity
-                                ].map((obj: any) => {
-                                    return { ...obj };
-                                });
+                            const entry =
+                                provenanceGraphNodesRef.current[workflow]?.[activity];
+                            newProvenanceGraphs[workflow][activity] = Array.isArray(
+                                entry
+                            )
+                                ? entry.map((obj: any) => ({ ...obj }))
+                                : entry;
                         }
                     }
                 }
