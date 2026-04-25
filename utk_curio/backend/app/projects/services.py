@@ -146,7 +146,11 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
     storage.write_spec(ukey, project_id, data.spec)
     copied = storage.copy_outputs(ukey, project_id, data.outputs)
-    storage.write_manifest(ukey, project_id, project.spec_revision, copied)
+    storage.write_manifest(ukey, project_id, project.spec_revision, copied,
+        name=data.name,
+        description=data.description,
+        thumbnail_accent=data.thumbnail_accent or "peach",
+    )
 
     db.session.commit()
     return _to_detail(project, spec=data.spec, outputs=copied)
@@ -177,7 +181,11 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     else:
         output_refs = _output_refs_from_manifest(existing_manifest)
 
-    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs)
+    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs,
+        name=project.name,
+        description=project.description,
+        thumbnail_accent=project.thumbnail_accent or "peach",
+    )
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=output_refs)
@@ -252,6 +260,59 @@ def delete_project(user, project_id: str, purge: bool = False) -> None:
     else:
         repo.soft_delete(project_id, user.id)
     db.session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Guest reconciliation
+# ---------------------------------------------------------------------------
+
+def reconcile_guest_projects(user) -> int:
+    """Re-import guest projects from the filesystem that are missing from the DB.
+
+    Called at server startup so a DB wipe doesn't orphan existing project files.
+    Returns the number of projects re-imported.
+    """
+    from utk_curio.backend.app.projects.models import Project
+
+    ukey = _user_dir_key(user)
+    projects_dir = storage._users_base() / ukey / "projects"
+    if not projects_dir.exists():
+        return 0
+
+    imported = 0
+    for entry in projects_dir.iterdir():
+        if not entry.is_dir():
+            continue
+        project_id = entry.name
+        if db.session.get(Project, project_id):
+            continue
+        manifest = storage.read_manifest(ukey, project_id)
+        if not manifest:
+            continue
+        if storage.read_spec(ukey, project_id) is None:
+            continue
+
+        name = manifest.get("name") or "Recovered Project"
+        description = manifest.get("description")
+        thumbnail_accent = manifest.get("thumbnail_accent") or "peach"
+        spec_revision = manifest.get("spec_revision", 1)
+        slug = repo._unique_slug(user.id, _slugify(name))
+        project = Project(
+            id=project_id,
+            user_id=user.id,
+            name=name,
+            slug=slug,
+            description=description,
+            folder_path=str(entry),
+            thumbnail_accent=thumbnail_accent,
+            spec_revision=spec_revision,
+        )
+        db.session.add(project)
+        imported += 1
+
+    if imported:
+        db.session.commit()
+    return imported
 
 
 # ---------------------------------------------------------------------------

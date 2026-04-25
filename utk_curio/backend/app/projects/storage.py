@@ -146,6 +146,10 @@ def write_manifest(
     project_id: str,
     spec_revision: int,
     refs: List[OutputRef],
+    *,
+    name: str = "",
+    description: Optional[str] = None,
+    thumbnail_accent: str = "peach",
 ) -> Path:
     d = ensure_project_dir(user_key, project_id)
     p = d / "manifest.json"
@@ -162,6 +166,9 @@ def write_manifest(
     manifest = {
         "project_id": project_id,
         "user_id": user_key,
+        "name": name,
+        "description": description,
+        "thumbnail_accent": thumbnail_accent,
         "saved_at": datetime.now(timezone.utc).isoformat(),
         "spec_revision": spec_revision,
         "outputs": entries,
