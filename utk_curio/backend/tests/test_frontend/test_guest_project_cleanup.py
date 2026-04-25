@@ -48,7 +48,7 @@ def test_guest_can_save_project(app_frontend: FrontendPage, page):
         and "/api/projects" in response.url
     ) as save_response:
         page.get_by_role("button", name=re.compile(r"^File")).click()
-        page.get_by_role("button", name="Save specification").click()
+        page.get_by_role("button", name="Save dataflow", exact=True).click()
 
     response = save_response.value
     assert response.status == 201

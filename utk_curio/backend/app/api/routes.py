@@ -242,7 +242,7 @@ def upload_file():
     if file.filename == '':
         return 'No selected file'
     
-    response = requests.post(api_address+":"+str(api_port)+"/upload", files={'file': file}, data={'fileName': file.filename})
+    response = requests.post(api_address+":"+str(api_port)+"/upload", files={'file': file}, data={'fileName': file.filename}, timeout=60)
 
     if response.status_code == 200:
         return 'File uploaded successfully'
@@ -540,7 +540,7 @@ def process_python_code():
                                     "dataType": input['dataType']
                                 }),
                                 headers={"Content-Type": "application/json"},
-                                )
+                                timeout=120)
         
         try:
             try:
@@ -575,6 +575,7 @@ def install_packages():
             api_address + ":" + str(api_port) + "/install",
             data=json.dumps({"packages": packages}),
             headers={"Content-Type": "application/json"},
+            timeout=120,
         )
         return response.json()
     finally:
@@ -596,7 +597,7 @@ def toLayers():
                                  "geojsons": request.json['geojsons']
                              }),
                              headers={"Content-Type": "application/json"},
-                             )
+                             timeout=60)
 
     return response.json()
 
@@ -1667,7 +1668,7 @@ def generate_templates():
 
 @bp.route('/datasets', methods=['GET'])
 def list_datasets():
-    response = requests.get(api_address+":"+str(api_port)+"/datasets")
+    response = requests.get(api_address+":"+str(api_port)+"/datasets", timeout=30)
     response.raise_for_status() 
     files = response.json()
     return jsonify(files)

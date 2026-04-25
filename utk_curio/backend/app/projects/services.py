@@ -35,6 +35,10 @@ def _is_shared_guest(user) -> bool:
     return bool(user and user.is_guest and user.username == CURIO_SHARED_GUEST_USERNAME)
 
 
+def _user_dir_key(user) -> str:
+    return storage._GUEST_KEY if _is_shared_guest(user) else str(user.id)
+
+
 def _check_guest_quota(user) -> None:
     if not user.is_guest:
         return
@@ -99,7 +103,8 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     _check_guest_quota(user)
 
     project_id = str(uuid4())
-    folder = str(storage.project_dir(user.id, project_id))
+    ukey = _user_dir_key(user)
+    folder = str(storage.project_dir(ukey, project_id))
 
     project = repo.upsert_project(
         user_id=user.id,
@@ -110,9 +115,9 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
     )
     project_id = project.id
 
-    storage.write_spec(user.id, project_id, data.spec)
-    copied = storage.copy_outputs(user.id, project_id, data.outputs)
-    storage.write_manifest(user.id, project_id, project.spec_revision, copied)
+    storage.write_spec(ukey, project_id, data.spec)
+    copied = storage.copy_outputs(ukey, project_id, data.outputs)
+    storage.write_manifest(ukey, project_id, project.spec_revision, copied)
 
     db.session.commit()
     return _to_detail(project, spec=data.spec, outputs=copied)
@@ -120,10 +125,11 @@ def save_project(user, data: ProjectCreate) -> ProjectDetail:
 
 def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
     project = repo.get_for_user(project_id, user.id)
-    existing_spec = storage.read_spec(user.id, project_id)
-    existing_manifest = storage.read_manifest(user.id, project_id)
+    ukey = _user_dir_key(user)
+    existing_spec = storage.read_spec(ukey, project_id)
+    existing_manifest = storage.read_manifest(ukey, project_id)
 
-    folder = str(storage.project_dir(user.id, project_id))
+    folder = str(storage.project_dir(ukey, project_id))
     project = repo.upsert_project(
         user_id=user.id,
         name=data.name or project.name,
@@ -135,14 +141,14 @@ def update_project(user, project_id: str, data: ProjectUpdate) -> ProjectDetail:
 
     effective_spec = data.spec if data.spec is not None else existing_spec
     if data.spec is not None:
-        storage.write_spec(user.id, project_id, data.spec)
+        storage.write_spec(ukey, project_id, data.spec)
 
     if data.outputs is not None:
-        output_refs = storage.copy_outputs(user.id, project_id, data.outputs)
+        output_refs = storage.copy_outputs(ukey, project_id, data.outputs)
     else:
         output_refs = _output_refs_from_manifest(existing_manifest)
 
-    storage.write_manifest(user.id, project_id, project.spec_revision, output_refs)
+    storage.write_manifest(ukey, project_id, project.spec_revision, output_refs)
 
     db.session.commit()
     return _to_detail(project, spec=effective_spec, outputs=output_refs)
@@ -156,8 +162,9 @@ def load_project(user, project_id: str) -> dict:
     project = repo.get_for_user(project_id, user.id)
     repo.touch_last_opened(project_id, user.id)
 
-    spec = storage.read_spec(user.id, project_id)
-    manifest = storage.read_manifest(user.id, project_id)
+    ukey = _user_dir_key(user)
+    spec = storage.read_spec(ukey, project_id)
+    manifest = storage.read_manifest(ukey, project_id)
 
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:
@@ -166,7 +173,7 @@ def load_project(user, project_id: str) -> dict:
             for o in manifest["outputs"]
         ]
 
-    hydrated = storage.hydrate_outputs(user.id, project_id, output_refs)
+    hydrated = storage.hydrate_outputs(ukey, project_id, output_refs)
 
     db.session.commit()
     return {
@@ -206,7 +213,7 @@ def rename_project(user, project_id: str, new_name: str) -> ProjectSummary:
 def delete_project(user, project_id: str, purge: bool = False) -> None:
     if purge:
         project = repo.get_for_user(project_id, user.id)
-        storage.delete_tree(user.id, project_id)
+        storage.delete_tree(_user_dir_key(user), project_id)
         repo.purge_project(project_id, user.id)
     else:
         repo.soft_delete(project_id, user.id)
@@ -219,8 +226,9 @@ def delete_project(user, project_id: str, purge: bool = False) -> None:
 
 def duplicate_project(user, project_id: str) -> ProjectDetail:
     src = repo.get_for_user(project_id, user.id)
-    spec = storage.read_spec(user.id, project_id)
-    manifest = storage.read_manifest(user.id, project_id)
+    ukey = _user_dir_key(user)
+    spec = storage.read_spec(ukey, project_id)
+    manifest = storage.read_manifest(ukey, project_id)
 
     output_refs: List[OutputRef] = []
     if manifest and "outputs" in manifest:

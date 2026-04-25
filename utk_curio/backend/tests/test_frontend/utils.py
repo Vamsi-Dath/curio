@@ -1128,13 +1128,13 @@ def upload_workflow(
     # force=True so the click isn't captured by the ReactFlow canvas layer
     file_menu_btn.click(force=True)
 
-    # Click "Import specification" and upload the JSON file
-    load_spec = page.get_by_role("button", name="Import specification")
+    # Click "Load dataflow" and upload the JSON file
+    load_spec = page.get_by_role("button", name="Load dataflow")
     load_spec.wait_for(state="visible", timeout=15000)
     assert load_spec.is_visible()
 
     with page.expect_file_chooser() as fc_info:
-        page.get_by_text("Import specification").click()
+        page.get_by_text("Load dataflow").click()
     fc_info.value.set_files(workflow_file)
 
     # Wait until all expected nodes have rendered on the ReactFlow canvas

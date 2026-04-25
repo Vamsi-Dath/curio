@@ -29,16 +29,15 @@ if TYPE_CHECKING:
 # ``UpMenu.tsx``. Keep this list in sync with the JSX.
 _HIDDEN_ENTRIES = (
     "New dataflow",
-    "Saved dataflows",
-    "Save specification",
-    "Save as...",
+    "Go to projects",
+    "Save dataflow",
+    "Save dataflow as...",
 )
 
 # Entries that should still render in --no-project mode (sanity check that
 # the File menu didn't get hidden in its entirety).
 _VISIBLE_ENTRIES = (
-    "Import specification",
-    "Export specification",
+    "Load dataflow",
 )
 
 
@@ -82,7 +81,7 @@ def test_file_menu_hides_project_entries_in_no_project_mode(
     rows in the File dropdown are gated behind ``!skipProjectPage`` in
     ``UpMenu.tsx``. This test asserts those rows are absent from the DOM
     (we use conditional rendering, not ``display: none``) while
-    ``Import specification`` / ``Export specification`` remain reachable.
+    ``Load dataflow`` remains reachable.
     """
     require_no_project_mode()
     _enter_dataflow(app_frontend, page)
@@ -115,16 +114,16 @@ def test_file_menu_has_no_orphan_divider_in_no_project_mode(
     """The File menu must not open with a leading divider.
 
     Regression guard for a layout bug where the divider that originally sat
-    *between* ``Saved dataflows`` and ``Import specification`` was rendered
+    *between* the project-only block and ``Load dataflow`` was rendered
     unconditionally. Once the project-backed block is hidden, that divider
     becomes the first visible child and the dropdown opens with an empty
-    line above ``Import specification``.
+    line above ``Load dataflow``.
 
     We can't rely on class-name substrings (CSS modules hash them in prod
     builds, e.g. ``W8KGkke_NOTP6EUuqRwP``), so we navigate via DOM
     hierarchy instead: ``UpMenu.tsx`` renders the dropdown as the
     ``nextElementSibling`` of the ``File`` ``<button>``, and the first row
-    inside it must be the ``Import specification`` entry (dividers in this
+    inside it must be the ``Load dataflow`` entry (dividers in this
     menu are empty ``<div>``s with no text content, so a regression that
     re-orphans the divider would put an empty element first).
     """
@@ -133,7 +132,7 @@ def test_file_menu_has_no_orphan_divider_in_no_project_mode(
     _open_file_menu(page)
 
     # Wait for the menu to be rendered before we introspect.
-    page.get_by_text("Import specification", exact=True).wait_for(
+    page.get_by_text("Load dataflow", exact=True).wait_for(
         state="visible", timeout=10000,
     )
 
@@ -162,13 +161,13 @@ def test_file_menu_has_no_orphan_divider_in_no_project_mode(
         f"Could not locate the File dropdown via DOM hierarchy: {info!r}"
     )
     # A divider is an empty ``<div>`` (no children, no text). The first
-    # legitimate row in --no-project mode is ``Import specification``.
-    assert info["firstText"] == "Import specification", (
+    # legitimate row in --no-project mode is ``Load dataflow``.
+    assert info["firstText"] == "Load dataflow", (
         f"File menu in --no-project mode does not open with "
-        f"`Import specification` as the first row "
+        f"`Load dataflow` as the first row "
         f"(firstText={info['firstText']!r}, "
         f"firstHasChildren={info['firstHasChildren']}, "
         f"menuChildCount={info['menuChildCount']}). "
-        f"This usually means the divider above `Import specification` is "
+        f"This usually means the divider above `Load dataflow` is "
         f"rendered outside the `!skipProjectPage` block in UpMenu.tsx."
     )

@@ -30,14 +30,15 @@ def cleanup_expired_guest_projects(app: Flask) -> int:
     from utk_curio.backend.app.projects.models import Project
     from utk_curio.backend.app.users.models import User
     from utk_curio.backend.app.projects import storage
+    from utk_curio.backend.app.projects.services import _user_dir_key
 
     cutoff = datetime.now(timezone.utc) - timedelta(hours=GUEST_TTL_HOURS)
     deleted = 0
 
     with app.app_context():
         try:
-            projects = (
-                db.session.query(Project)
+            rows = (
+                db.session.query(Project, User)
                 .join(User, Project.user_id == User.id)
                 .filter(User.is_guest.is_(True))
                 .filter(
@@ -58,9 +59,9 @@ def cleanup_expired_guest_projects(app: Flask) -> int:
             logger.debug("Project table not yet created; skipping cleanup")
             return 0
 
-        for project in projects:
+        for project, user in rows:
             try:
-                storage.delete_tree(project.user_id, project.id)
+                storage.delete_tree(_user_dir_key(user), project.id)
                 db.session.delete(project)
                 deleted += 1
             except Exception:

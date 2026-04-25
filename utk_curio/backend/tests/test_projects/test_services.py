@@ -17,7 +17,7 @@ def test_save_new_project(app, db, user_and_token, tmp_curio):
     assert detail.id
     assert detail.name == "My Project"
     assert detail.spec_revision == 1
-    assert storage.read_spec(user.id, detail.id) == _make_spec()
+    assert storage.read_spec(services._user_dir_key(user), detail.id) == _make_spec()
 
 
 def test_update_project_bumps_revision(app, db, user_and_token, tmp_curio):
@@ -97,7 +97,7 @@ def test_soft_delete(app, db, user_and_token, tmp_curio):
 def test_purge_delete(app, db, user_and_token, tmp_curio):
     user, _ = user_and_token
     detail = services.save_project(user, ProjectCreate(name="Purge", spec=_make_spec()))
-    proj_dir = storage.project_dir(user.id, detail.id)
+    proj_dir = storage.project_dir(services._user_dir_key(user), detail.id)
     assert proj_dir.exists()
 
     services.delete_project(user, detail.id, purge=True)

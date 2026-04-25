@@ -14,6 +14,12 @@ module.exports = {
     path: path.resolve(__dirname, "dist"),
     publicPath: "/",
   },
+  cache: {
+    type: 'filesystem',
+    buildDependencies: {
+      config: [__filename],
+    },
+  },
   devServer: {
     historyApiFallback: true,
   },
