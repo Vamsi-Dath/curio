@@ -1,8 +1,12 @@
 """Business logic for project save / load / list / delete."""
 from __future__ import annotations
 
+import logging
+import shutil
 from typing import List, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.projects import repositories as repo
@@ -230,9 +234,18 @@ def list_projects(
     projects = repo.list_for_user(user.id, scope=scope, sort=sort)
     ukey = _user_dir_key(user)
     summaries = []
+    purged = False
     for p in projects:
         spec = storage.read_spec(ukey, p.id)
+        if spec is None:
+            # Spec file is gone — remove the stale DB row so the list stays
+            # in sync with the filesystem (files are the source of truth).
+            repo.purge_project(p.id, user.id)
+            purged = True
+            continue
         summaries.append(_to_summary(p, graph_preview=_extract_graph_preview(spec)))
+    if purged:
+        db.session.commit()
     return summaries
 
 
@@ -270,12 +283,43 @@ def reconcile_guest_projects(user) -> int:
     """Re-import guest projects from the filesystem that are missing from the DB.
 
     Called at server startup so a DB wipe doesn't orphan existing project files.
+    Also migrates projects from orphaned numeric user directories (created before
+    the guest-key change) into the guest directory.
     Returns the number of projects re-imported.
     """
     from utk_curio.backend.app.projects.models import Project
+    from utk_curio.backend.app.users.models import User as UserModel
 
     ukey = _user_dir_key(user)
-    projects_dir = storage._users_base() / ukey / "projects"
+    users_base = storage._users_base()
+
+    # Migrate projects from orphaned numeric user dirs into the guest dir.
+    # A numeric dir is "orphaned" when no User row with that id exists anymore
+    # (e.g. after a DB wipe). We move the project subdirectories so the main
+    # reconcile pass below can find and import them.
+    guest_projects_dir = users_base / ukey / "projects"
+    if users_base.exists():
+        for user_dir in users_base.iterdir():
+            if not user_dir.is_dir() or not user_dir.name.isdigit():
+                continue
+            if db.session.get(UserModel, int(user_dir.name)) is not None:
+                continue  # user still exists — leave their files alone
+            old_projects = user_dir / "projects"
+            if not old_projects.exists():
+                continue
+            guest_projects_dir.mkdir(parents=True, exist_ok=True)
+            for proj_entry in old_projects.iterdir():
+                dest = guest_projects_dir / proj_entry.name
+                if not dest.exists():
+                    try:
+                        shutil.move(str(proj_entry), str(dest))
+                    except Exception:
+                        logger.exception(
+                            "Failed to migrate project %s from %s",
+                            proj_entry.name, user_dir.name,
+                        )
+
+    projects_dir = users_base / ukey / "projects"
     if not projects_dir.exists():
         return 0
 
@@ -284,31 +328,35 @@ def reconcile_guest_projects(user) -> int:
         if not entry.is_dir():
             continue
         project_id = entry.name
-        if db.session.get(Project, project_id):
-            continue
-        manifest = storage.read_manifest(ukey, project_id)
-        if not manifest:
-            continue
-        if storage.read_spec(ukey, project_id) is None:
-            continue
+        try:
+            with db.session.begin_nested():  # savepoint: one failure won't abort the rest
+                if db.session.get(Project, project_id):
+                    continue
+                manifest = storage.read_manifest(ukey, project_id)
+                if not manifest:
+                    continue
+                if storage.read_spec(ukey, project_id) is None:
+                    continue
 
-        name = manifest.get("name") or "Recovered Project"
-        description = manifest.get("description")
-        thumbnail_accent = manifest.get("thumbnail_accent") or "peach"
-        spec_revision = manifest.get("spec_revision", 1)
-        slug = repo._unique_slug(user.id, _slugify(name))
-        project = Project(
-            id=project_id,
-            user_id=user.id,
-            name=name,
-            slug=slug,
-            description=description,
-            folder_path=str(entry),
-            thumbnail_accent=thumbnail_accent,
-            spec_revision=spec_revision,
-        )
-        db.session.add(project)
-        imported += 1
+                name = manifest.get("name") or "Recovered Project"
+                description = manifest.get("description")
+                thumbnail_accent = manifest.get("thumbnail_accent") or "peach"
+                spec_revision = manifest.get("spec_revision", 1)
+                slug = repo._unique_slug(user.id, _slugify(name))
+                project = Project(
+                    id=project_id,
+                    user_id=user.id,
+                    name=name,
+                    slug=slug,
+                    description=description,
+                    folder_path=str(entry),
+                    thumbnail_accent=thumbnail_accent,
+                    spec_revision=spec_revision,
+                )
+                db.session.add(project)
+                imported += 1
+        except Exception:
+            logger.exception("Failed to reconcile project %s", project_id)
 
     if imported:
         db.session.commit()

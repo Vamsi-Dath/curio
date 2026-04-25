@@ -29,9 +29,10 @@ const NODE_H = 16;
 interface Props {
   preview?: GraphPreview | null;
   accentColor: string;
+  bgColor: string;
 }
 
-const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor }) => {
+const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor, bgColor }) => {
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const { scaledNodes, nodeCenter } = useMemo(() => {
     const nodes = preview?.nodes ?? [];
@@ -74,7 +75,7 @@ const DataflowThumbnail: React.FC<Props> = ({ preview, accentColor }) => {
 
   if (!preview || preview.nodes.length === 0) {
     return (
-      <div style={{ width: "100%", height: "100%", backgroundColor: accentColor, opacity: 0.18 }} />
+      <div style={{ width: "100%", height: "100%", backgroundColor: bgColor }} />
     );
   }
 

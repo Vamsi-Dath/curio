@@ -200,7 +200,7 @@ const ProjectsList: React.FC = () => {
               }}
             >
               <div style={cardThumbnailStyle}>
-                <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} />
+                <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} bgColor={accent(p.thumbnail_accent).bg} />
               </div>
               <div style={cardBodyStyle}>
                 <span style={cardTitleStyle}>{p.name}</span>

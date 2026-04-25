@@ -8,7 +8,9 @@ with app.app_context():
         from utk_curio.backend.app.users.services import _shared_guest_user
         from utk_curio.backend.app.projects.services import reconcile_guest_projects
         guest = _shared_guest_user()
-        reconcile_guest_projects(guest)
+        n = reconcile_guest_projects(guest)
+        if n:
+            app.logger.info("Reconciled %d guest project(s) from filesystem", n)
     except Exception:
         app.logger.warning("Could not ensure guest user on startup", exc_info=True)
 
