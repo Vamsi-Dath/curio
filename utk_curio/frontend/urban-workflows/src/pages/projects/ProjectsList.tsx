@@ -4,6 +4,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useUserContext } from "../../providers/UserProvider";
 import { projectsApi, ProjectSummary } from "../../api/projectsApi";
 import logo from "assets/curio-2.png";
+import DataflowThumbnail from "../../components/DataflowThumbnail";
 
 type ViewMode = "grid" | "list";
 type FilterTab = "all" | "recent" | "archived";
@@ -196,7 +197,9 @@ const ProjectsList: React.FC = () => {
                 setContextMenu({ x: e.clientX, y: e.clientY, project: p });
               }}
             >
-              <div style={{ ...cardAccentStyle, backgroundColor: accent(p.thumbnail_accent).fg }} />
+              <div style={cardThumbnailStyle}>
+                <DataflowThumbnail preview={p.graph_preview} accentColor={accent(p.thumbnail_accent).fg} />
+              </div>
               <div style={cardBodyStyle}>
                 <span style={cardTitleStyle}>{p.name}</span>
                 <span style={cardSubStyle}>
@@ -431,7 +434,8 @@ const listGridStyle: CSS.Properties = {
 };
 
 const cardStyle: CSS.Properties = {
-  backgroundColor: "#fff",
+  position: "relative",
+  height: "180px",
   borderRadius: "8px",
   overflow: "hidden",
   cursor: "pointer",
@@ -439,16 +443,21 @@ const cardStyle: CSS.Properties = {
   transition: "box-shadow 0.15s",
 };
 
-const cardAccentStyle: CSS.Properties = {
-  height: "6px",
-  backgroundColor: "#6C63FF",
+const cardThumbnailStyle: CSS.Properties = {
+  position: "absolute",
+  inset: 0,
 };
 
 const cardBodyStyle: CSS.Properties = {
-  padding: "16px",
+  position: "absolute",
+  bottom: 0,
+  left: 0,
+  right: 0,
+  padding: "28px 14px 14px",
   display: "flex",
   flexDirection: "column",
-  gap: "4px",
+  gap: "3px",
+  background: "linear-gradient(to bottom, transparent 0%, rgba(255,255,255,0.93) 35%, rgba(255,255,255,1) 65%)",
 };
 
 const cardTitleStyle: CSS.Properties = {

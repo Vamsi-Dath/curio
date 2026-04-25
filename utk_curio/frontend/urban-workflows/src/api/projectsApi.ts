@@ -5,6 +5,25 @@ export interface OutputRef {
   filename: string;
 }
 
+export interface GraphPreviewNode {
+  id: string;
+  type: string;
+  x: number;
+  y: number;
+  w?: number | null;
+  h?: number | null;
+}
+
+export interface GraphPreviewEdge {
+  source: string;
+  target: string;
+}
+
+export interface GraphPreview {
+  nodes: GraphPreviewNode[];
+  edges: GraphPreviewEdge[];
+}
+
 export interface ProjectSummary {
   id: string;
   name: string;
@@ -16,6 +35,7 @@ export interface ProjectSummary {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  graph_preview?: GraphPreview | null;
 }
 
 export interface ProjectDetail extends ProjectSummary {

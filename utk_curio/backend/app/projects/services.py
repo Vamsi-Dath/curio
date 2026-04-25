@@ -53,7 +53,35 @@ def _check_guest_quota(user) -> None:
         )
 
 
-def _to_summary(p) -> ProjectSummary:
+def _extract_graph_preview(spec: Optional[dict]) -> Optional[dict]:
+    if not spec:
+        return None
+    dataflow = spec.get("dataflow") if isinstance(spec, dict) else None
+    if not dataflow:
+        return None
+    raw_nodes = dataflow.get("nodes") or []
+    raw_edges = dataflow.get("edges") or []
+    nodes = [
+        {
+            "id": n.get("id", ""),
+            "type": n.get("type", ""),
+            "x": n.get("x", 0),
+            "y": n.get("y", 0),
+            "w": n.get("width"),
+            "h": n.get("height"),
+        }
+        for n in raw_nodes
+        if isinstance(n, dict)
+    ]
+    edges = [
+        {"source": e.get("source", ""), "target": e.get("target", "")}
+        for e in raw_edges
+        if isinstance(e, dict)
+    ]
+    return {"nodes": nodes, "edges": edges}
+
+
+def _to_summary(p, graph_preview=None) -> ProjectSummary:
     return ProjectSummary(
         id=p.id,
         name=p.name,
@@ -65,6 +93,7 @@ def _to_summary(p) -> ProjectSummary:
         created_at=p.created_at.isoformat() if p.created_at else "",
         updated_at=p.updated_at.isoformat() if p.updated_at else "",
         archived_at=p.archived_at.isoformat() if p.archived_at else None,
+        graph_preview=graph_preview,
     )
 
 
@@ -191,7 +220,12 @@ def list_projects(
     user, scope: str = "mine", sort: str = "last_opened"
 ) -> List[ProjectSummary]:
     projects = repo.list_for_user(user.id, scope=scope, sort=sort)
-    return [_to_summary(p) for p in projects]
+    ukey = _user_dir_key(user)
+    summaries = []
+    for p in projects:
+        spec = storage.read_spec(ukey, p.id)
+        summaries.append(_to_summary(p, graph_preview=_extract_graph_preview(spec)))
+    return summaries
 
 
 # ---------------------------------------------------------------------------
