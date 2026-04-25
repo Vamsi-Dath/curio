@@ -28,16 +28,17 @@ if TYPE_CHECKING:
 # Entries that are gated on ``!skipProjectPage`` in
 # ``UpMenu.tsx``. Keep this list in sync with the JSX.
 _HIDDEN_ENTRIES = (
-    "New dataflow",
-    "Go to projects",
     "Save dataflow",
-    "Save dataflow as...",
+    "Go to projects",
 )
 
 # Entries that should still render in --no-project mode (sanity check that
 # the File menu didn't get hidden in its entirety).
 _VISIBLE_ENTRIES = (
+    "New dataflow",
     "Load dataflow",
+    "Save dataflow as",
+    "Export as notebook",
 )
 
 
@@ -74,14 +75,11 @@ def _open_file_menu(page) -> None:
 def test_file_menu_hides_project_entries_in_no_project_mode(
     app_frontend: "FrontendPage", page,
 ):
-    """File menu must not surface any project-backed entries.
+    """File menu must only hide the project-backed entries in --no-project mode.
 
-    In ``--no-project`` mode the SPA has no per-user ``/projects`` page and
-    no project-save endpoints to call, so the New / Saved / Save / Save-As
-    rows in the File dropdown are gated behind ``!skipProjectPage`` in
-    ``UpMenu.tsx``. This test asserts those rows are absent from the DOM
-    (we use conditional rendering, not ``display: none``) while
-    ``Load dataflow`` remains reachable.
+    Only ``Save dataflow`` and ``Go to projects`` are gated behind
+    ``!skipProjectPage`` in ``UpMenu.tsx``; ``New dataflow``, ``Load dataflow``,
+    ``Save dataflow as``, and ``Export as notebook`` are always visible.
     """
     require_no_project_mode()
     _enter_dataflow(app_frontend, page)
@@ -111,28 +109,22 @@ def test_file_menu_hides_project_entries_in_no_project_mode(
 def test_file_menu_has_no_orphan_divider_in_no_project_mode(
     app_frontend: "FrontendPage", page,
 ):
-    """The File menu must not open with a leading divider.
+    """The File menu must open with ``New dataflow`` as the first row.
 
-    Regression guard for a layout bug where the divider that originally sat
-    *between* the project-only block and ``Load dataflow`` was rendered
-    unconditionally. Once the project-backed block is hidden, that divider
-    becomes the first visible child and the dropdown opens with an empty
-    line above ``Load dataflow``.
+    Regression guard: the divider separating the always-visible block from the
+    project-only block must not appear before ``New dataflow``. Dividers are
+    empty ``<div>``s with no text, so a regression that renders one first would
+    put an empty element at the top of the dropdown.
 
-    We can't rely on class-name substrings (CSS modules hash them in prod
-    builds, e.g. ``W8KGkke_NOTP6EUuqRwP``), so we navigate via DOM
-    hierarchy instead: ``UpMenu.tsx`` renders the dropdown as the
-    ``nextElementSibling`` of the ``File`` ``<button>``, and the first row
-    inside it must be the ``Load dataflow`` entry (dividers in this
-    menu are empty ``<div>``s with no text content, so a regression that
-    re-orphans the divider would put an empty element first).
+    We navigate via DOM hierarchy (``nextElementSibling`` of the ``File``
+    ``<button>``) because CSS Modules hashes class names in prod builds.
     """
     require_no_project_mode()
     _enter_dataflow(app_frontend, page)
     _open_file_menu(page)
 
     # Wait for the menu to be rendered before we introspect.
-    page.get_by_text("Load dataflow", exact=True).wait_for(
+    page.get_by_text("New dataflow", exact=True).wait_for(
         state="visible", timeout=10000,
     )
 
@@ -161,13 +153,13 @@ def test_file_menu_has_no_orphan_divider_in_no_project_mode(
         f"Could not locate the File dropdown via DOM hierarchy: {info!r}"
     )
     # A divider is an empty ``<div>`` (no children, no text). The first
-    # legitimate row in --no-project mode is ``Load dataflow``.
-    assert info["firstText"] == "Load dataflow", (
+    # legitimate row in --no-project mode is ``New dataflow``.
+    assert info["firstText"] == "New dataflow", (
         f"File menu in --no-project mode does not open with "
-        f"`Load dataflow` as the first row "
+        f"`New dataflow` as the first row "
         f"(firstText={info['firstText']!r}, "
         f"firstHasChildren={info['firstHasChildren']}, "
         f"menuChildCount={info['menuChildCount']}). "
-        f"This usually means the divider above `Load dataflow` is "
-        f"rendered outside the `!skipProjectPage` block in UpMenu.tsx."
+        f"This usually means an unexpected element is rendered before "
+        f"`New dataflow` in UpMenu.tsx."
     )
