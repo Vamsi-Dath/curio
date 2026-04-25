@@ -154,9 +154,3 @@
   top: 12px;
   z-index: 200;
 }
-
-.gridContainer {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2px;
-}
