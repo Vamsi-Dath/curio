@@ -536,17 +536,17 @@ export default function UpMenu({
                 {/* Curio Jupyter interoperability */}
                 <div className={styles.dropdownWrapper}>
                      <button className={styles.button} onClick={() => toggleMenu("notebook")}>
-                        Jupyter ⏷
+                        Notebook ⏷
                     </button>
                     {activeMenu === "notebook" && (
                         <div className={styles.dropDownMenu}>
                             <div className={styles.dropDownRow} onClick={loadNotebookFile}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faBookOpen} />
-                                <button className={styles.noStyleButton}>Import from Jupyter Notebook</button>
+                                <button className={styles.noStyleButton}>Import Notebook</button>
                             </div>
                             <div className={styles.dropDownRow} onClick={exportNotebook}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faShareSquare} />
-                                <button className={styles.noStyleButton}>Export as Jupyter Notebook</button>
+                                <button className={styles.noStyleButton}>Export Notebook</button>
                             </div>
                         </div>
                     )}
