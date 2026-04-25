@@ -4,11 +4,12 @@ import { useNodeActionsContext, useFlowContext } from "../../../providers/FlowPr
 import { useReactFlow } from "reactflow";
 import { useCode } from "../../../hook/useCode";
 import { TrillGenerator } from "../../../TrillGenerator";
+import { TrillNotebookConverter } from "../../../NotebookConvertor";
 import styles from "./UpMenu.module.css";
 import clsx from 'clsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-    faDatabase, faFileImport, faFileExport, faRobot,
+    faDatabase, faFileImport, faFileExport, faRobot, faBookOpen, faShareSquare,
     faTableColumns, faUpRightAndDownLeftFromCenter, faDownLeftAndUpRightToCenter,
     faCubes, faSitemap, faCircleQuestion
 } from "@fortawesome/free-solid-svg-icons";
@@ -37,6 +38,7 @@ export default function UpMenu({
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
+    const loadNotebookInputRef = useRef<HTMLInputElement>(null);
 
     const { workflowNameRef, workflowName, setWorkflowName, setAllMinimized, allMinimized, expandStatus, setExpandStatus } = useNodeActionsContext();
     const { packages } = useFlowContext();
@@ -89,6 +91,27 @@ export default function UpMenu({
         setActiveMenu(null);
     };
 
+    const exportNotebook = () => {
+        const trill_spec = TrillGenerator.generateTrill(getNodes(), getEdges(), workflowNameRef.current, "", packages);
+        const converter = new TrillNotebookConverter();
+        const notebook = converter.trillToNotebook(trill_spec);
+        const notebookContent = converter.serializeNotebook(notebook);
+
+        const blob = new Blob([notebookContent], { type: 'application/json' });
+
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = workflowNameRef.current + '.ipynb';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        // For now, we will just log the specification. (TEMORARy)
+        console.log("Exporting notebook with specification:", trill_spec);
+
+        setActiveMenu(null);
+    }
+
     const handleFileUpload = (e: any) => {
         const file = e.target.files[0];
         if (file && file.type === 'application/json') {
@@ -108,10 +131,37 @@ export default function UpMenu({
         }
     };
 
+    const handleNotebookUpload = (e: any) => {
+        const file = e.target.files[0];
+        if (!file) {
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = (event: any) => {
+            try {
+                const jsonContent = JSON.parse(event.target.result);
+                const converter = new TrillNotebookConverter();
+                const trillSpec = converter.notebookToTrill(jsonContent);
+                loadTrill(trillSpec);
+            } catch (err) {
+                console.error('Invalid notebook file:', err);
+            }
+        };
+        reader.onerror = (event: any) => console.error('Error reading notebook file:', event.target.error);
+        reader.readAsText(file);
+    };
+
     const loadTrillFile = () => {
         setActiveMenu(null);
         // Defer the click so the input is not unmounted before the dialog opens
         setTimeout(() => loadTrillInputRef.current?.click(), 0);
+    };
+
+    const loadNotebookFile = () => {
+        setActiveMenu(null);
+        // Defer the click so the input is not unmounted before the dialog opens
+        setTimeout(() => loadNotebookInputRef.current?.click(), 0);
     };
 
     useEffect(() => {
@@ -164,7 +214,7 @@ export default function UpMenu({
                 <div className={styles.dropdownWrapper}>
                     <button className={styles.button} onClick={() => toggleMenu('file')}>File ⏷</button>
                     {activeMenu === 'file' && (
-                        <div className={styles.dropDownMenu}>
+                        <div className={clsx(styles.dropDownMenu, styles.gridContainer)}>
                             <div className={styles.dropDownRow} onClick={loadTrillFile}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileImport} />
                                 <button className={styles.noStyleButton}>Load specification</button>
@@ -172,6 +222,14 @@ export default function UpMenu({
                             <div className={styles.dropDownRow} onClick={exportTrill}>
                                 <FontAwesomeIcon className={styles.dropDownIcon} icon={faFileExport} />
                                 <button className={styles.noStyleButton}>Save specification</button>
+                            </div>
+                            <div className={styles.dropDownRow} onClick={loadNotebookFile}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faBookOpen} />
+                                <button className={styles.noStyleButton}>Import Notebook</button>
+                            </div>
+                            <div className={styles.dropDownRow} onClick={exportNotebook}>
+                                <FontAwesomeIcon className={styles.dropDownIcon} icon={faShareSquare} />
+                                <button className={styles.noStyleButton}>Export Notebook</button>
                             </div>
                         </div>
                     )}
@@ -272,6 +330,13 @@ export default function UpMenu({
                 ref={loadTrillInputRef}
                 style={{ display: 'none' }}
                 onChange={handleFileUpload}
+            />
+            <input
+                type="file"
+                accept=".ipynb"
+                ref={loadNotebookInputRef}
+                style={{ display: 'none' }}
+                onChange={handleNotebookUpload}
             />
             <TrillProvenanceWindow
                 open={trillProvenanceOpen}

@@ -51,7 +51,7 @@
   background-color: #1E1F23;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
   z-index: 100;
-  width: 200px;
+  width: 400px;
   border: 1px solid rgba(0, 0, 0, 0.2);
   border-radius: 0;
 }
@@ -123,3 +123,8 @@
   z-index: 200;
 }
 
+.gridContainer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+}
