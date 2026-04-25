@@ -22,7 +22,7 @@ def test_project_not_visible_to_other_user(app_frontend: "FrontendPage", page):
     file_btn = page.get_by_role("button", name=re.compile("File"))
     file_btn.wait_for(state="visible", timeout=15000)
     file_btn.click(force=True)
-    page.get_by_text("Save specification", exact=True).click()
+    page.get_by_role("button", name="Save dataflow", exact=True).click()
     page.wait_for_timeout(2000)
 
     page.get_by_text("Sign out").click()

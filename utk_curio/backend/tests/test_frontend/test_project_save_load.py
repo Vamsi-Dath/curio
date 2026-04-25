@@ -31,7 +31,7 @@ def test_project_save_via_menu(app_frontend: "FrontendPage", page):
     file_btn.wait_for(state="visible", timeout=15000)
     file_btn.click(force=True)
 
-    save_btn = page.get_by_text("Save specification", exact=True)
+    save_btn = page.get_by_role("button", name="Save dataflow", exact=True)
     save_btn.wait_for(state="visible", timeout=5000)
     save_btn.click()
     # `handleSave` closes the File menu once the save + refreshSavedProjects
