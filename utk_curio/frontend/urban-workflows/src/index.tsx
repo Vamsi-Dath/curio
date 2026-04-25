@@ -2,35 +2,41 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import * as monaco from "monaco-editor";
 import { loader } from "@monaco-editor/react";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useParams,
+} from "react-router-dom";
 
-// Use bundled Monaco instead of CDN so the editor works offline
 loader.config({ monaco });
-// Expose on window for tests and any code that uses window.monaco (e.g. getEditors())
 (window as unknown as { monaco: typeof monaco }).monaco = monaco;
 
-import './registry';
-import { getAllNodeTypes } from './registry';
+import "./registry";
+import { getAllNodeTypes } from "./registry";
 
-// Send the frontend node-type registry to the backend so it can use it
-// for provenance, templates, and connection validation without hardcoded dicts.
 (() => {
-  const nodeTypes: Record<string, { inputTypes: string[]; outputTypes: string[] }> = {};
+  const nodeTypes: Record<
+    string,
+    { inputTypes: string[]; outputTypes: string[] }
+  > = {};
   for (const desc of getAllNodeTypes()) {
     nodeTypes[desc.id] = {
-      inputTypes: desc.inputPorts.flatMap(p => p.types),
-      outputTypes: desc.outputPorts.flatMap(p => p.types),
+      inputTypes: desc.inputPorts.flatMap((p) => p.types),
+      outputTypes: desc.outputPorts.flatMap((p) => p.types),
     };
   }
-  fetch(process.env.BACKEND_URL + '/node-types', {
-    method: 'POST',
-    headers: { 'Content-type': 'application/json; charset=UTF-8' },
+  fetch(process.env.BACKEND_URL + "/node-types", {
+    method: "POST",
+    headers: { "Content-type": "application/json; charset=UTF-8" },
     body: JSON.stringify({ nodeTypes }),
   }).catch(() => {});
 })();
 
 import FlowProvider from "./providers/FlowProvider";
 import TemplateProvider from "./providers/TemplateProvider";
-import UserProvider from "./providers/UserProvider";
+import UserProvider, { useUserContext } from "./providers/UserProvider";
 import DialogProvider from "./providers/DialogProvider";
 import { ToastProvider } from "./providers/ToastProvider";
 import { BackendHealthBanner } from "./providers/BackendHealthBanner";
@@ -38,31 +44,92 @@ import { MainCanvas } from "./components/MainCanvas";
 import { ReactFlowProvider } from "reactflow";
 import ProvenanceProvider from "./providers/ProvenanceProvider";
 import LLMProvider from "./providers/LLMProvider";
+import { RequireAuth } from "./components/RequireAuth";
+
+import SignIn from "./pages/auth/SignIn";
+import SignUp from "./pages/auth/SignUp";
+import ProjectsList from "./pages/projects/ProjectsList";
+import { ProjectLoader } from "./components/ProjectLoader";
+
+const MainCanvasRoute: React.FC = () => (
+  <DialogProvider>
+    <FlowProvider>
+      <TemplateProvider>
+        <ProjectLoader>
+          <MainCanvas />
+        </ProjectLoader>
+      </TemplateProvider>
+    </FlowProvider>
+  </DialogProvider>
+);
+
+const LegacyWorkflowRedirect: React.FC = () => {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? `/dataflow/${id}` : "/dataflow"} replace />;
+};
+
+const HomeRedirect: React.FC = () => {
+  const { skipProjectPage } = useUserContext();
+
+  return <Navigate to={skipProjectPage ? "/dataflow" : "/projects"} replace />;
+};
+
+const ProjectsRoute: React.FC = () => {
+  const { skipProjectPage } = useUserContext();
+
+  if (skipProjectPage) return <Navigate to="/dataflow" replace />;
+
+  return <ProjectsList />;
+};
 
 const App: React.FC = () => {
   return (
-    <BackendHealthBanner>
-    <ToastProvider>
-    <ReactFlowProvider>
-      <LLMProvider>
-        <ProvenanceProvider>
-          <UserProvider>
-            <DialogProvider>
-              <FlowProvider>
-                <TemplateProvider>
-                  <MainCanvas />
-                </TemplateProvider>
-              </FlowProvider>
-            </DialogProvider>
-          </UserProvider>
-        </ProvenanceProvider>
-      </LLMProvider>
-    </ReactFlowProvider>
-    </ToastProvider>
-    </BackendHealthBanner>
+    <BrowserRouter>
+      <BackendHealthBanner>
+        <ToastProvider>
+          <ReactFlowProvider>
+            <LLMProvider>
+              <ProvenanceProvider>
+                <UserProvider>
+                  <Routes>
+                    <Route path="/auth/signin" element={<SignIn />} />
+                    <Route path="/auth/signup" element={<SignUp />} />
+                    <Route
+                      path="/projects"
+                      element={
+                        <RequireAuth>
+                          <ProjectsRoute />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
+                      path="/dataflow/:id?"
+                      element={
+                        <RequireAuth>
+                          <MainCanvasRoute />
+                        </RequireAuth>
+                      }
+                    />
+                    <Route
+                      path="/workflow/:id?"
+                      element={<LegacyWorkflowRedirect />}
+                    />
+                    <Route
+                      path="/"
+                      element={<HomeRedirect />}
+                    />
+                  </Routes>
+                </UserProvider>
+              </ProvenanceProvider>
+            </LLMProvider>
+          </ReactFlowProvider>
+        </ToastProvider>
+      </BackendHealthBanner>
+    </BrowserRouter>
   );
 };
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
+const root = ReactDOM.createRoot(document.getElementById("root")!);
 
 root.render(<App />);

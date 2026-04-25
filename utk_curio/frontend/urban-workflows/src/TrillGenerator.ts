@@ -104,6 +104,12 @@ export class TrillGenerator {
             trill_node.x = node.position.x;
             trill_node.y = node.position.y;
 
+            if(typeof node.data.nodeWidth === "number")
+                trill_node.width = node.data.nodeWidth;
+
+            if(typeof node.data.nodeHeight === "number")
+                trill_node.height = node.data.nodeHeight;
+
             if(node.data.code != undefined){
                 trill_node.content = node.data.code;
             }

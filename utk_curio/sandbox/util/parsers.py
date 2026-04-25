@@ -14,6 +14,11 @@ import numpy as np
 from shapely import wkt
 from pathlib import Path
 
+#DuckDB imports:
+import io
+import duckdb
+from utk_curio.sandbox.util.db import get_connection, init_db
+
 # Utility Functions
 # transforms the whole input into a dict (json) in depth
 # def toJsonInput(input):
@@ -197,7 +202,7 @@ def parse_geodataframe(data_value):
     # gdf = gpd.GeoDataFrame(df, geometry='geometry')
     gdf = gpd.GeoDataFrame.from_features(data_value["features"])
     if 'metadata' in data_value and 'name' in data_value['metadata']:
-        gdf.metadata = {'name': data_value['metadata']['name']}
+        gdf.__dict__['metadata'] = {'name': data_value['metadata']['name']}
     
     return gdf
 
@@ -252,6 +257,12 @@ def _make_serializable(val):
     """Recursively convert numpy/pandas types to native Python types."""
     if isinstance(val, np.ndarray):
         return [_make_serializable(v) for v in val.tolist()]
+    elif isinstance(val, tuple):
+        return [_make_serializable(v) for v in val]
+    elif isinstance(val, set):
+        return [_make_serializable(v) for v in sorted(val, key=repr)]
+    elif isinstance(val, bytes):
+        return val.decode("utf-8", errors="replace")
     elif isinstance(val, (np.integer,)):
         return int(val)
     elif isinstance(val, (np.floating,)):
@@ -265,6 +276,103 @@ def _make_serializable(val):
     elif isinstance(val, list):
         return [_make_serializable(v) for v in val]
     return val
+
+
+def _is_missing_value(val):
+    if val is None:
+        return True
+    try:
+        missing = pd.isna(val)
+    except Exception:
+        return False
+    return isinstance(missing, (bool, np.bool_)) and bool(missing)
+
+
+def _encode_object_cell_for_parquet(val):
+    if _is_missing_value(val):
+        return None
+    normalized = _make_serializable(val)
+    return json.dumps(normalized, ensure_ascii=False, default=str)
+
+
+def _decode_object_cell_from_parquet(val):
+    if _is_missing_value(val):
+        return None
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except Exception:
+            return safe_json_loads(val)
+    return val
+
+
+def _prepare_frame_for_parquet(frame, geometry_col=None):
+    prepared = frame.copy()
+    encoded_object_columns = []
+
+    for col in prepared.columns:
+        if geometry_col is not None and col == geometry_col:
+            continue
+        if prepared[col].dtype == object:
+            prepared[col] = prepared[col].apply(_encode_object_cell_for_parquet)
+            encoded_object_columns.append(col)
+
+    return prepared, encoded_object_columns
+
+
+def _serialize_parquet_meta(frame_metadata=None, encoded_object_columns=None):
+    payload = {}
+    if frame_metadata:
+        payload["frame_metadata"] = frame_metadata
+    if encoded_object_columns:
+        payload["encoded_object_columns"] = encoded_object_columns
+    return json.dumps(payload) if payload else None
+
+
+def _parse_parquet_meta(meta_json):
+    if not meta_json:
+        return None, []
+
+    try:
+        payload = json.loads(meta_json)
+    except Exception:
+        return None, []
+
+    if isinstance(payload, dict) and (
+        "frame_metadata" in payload or "encoded_object_columns" in payload
+    ):
+        return payload.get("frame_metadata"), payload.get("encoded_object_columns", [])
+
+    # Backward compatibility: older geodataframe rows stored only ``gdf.metadata``.
+    return payload, []
+
+
+def _restore_frame_from_parquet(frame, encoded_object_columns, geometry_col=None):
+    if encoded_object_columns:
+        for col in encoded_object_columns:
+            if col in frame.columns:
+                frame[col] = frame[col].apply(_decode_object_cell_from_parquet)
+        return frame
+
+    for col in frame.columns:
+        if geometry_col is not None and col == geometry_col:
+            continue
+        if frame[col].dtype == object:
+            frame[col] = frame[col].apply(safe_json_loads)
+
+    return frame
+
+
+def normalize_dataframe_for_json(df):
+    """Convert DataFrame cells to JSON-safe Python values."""
+    normalized = df.copy()
+
+    for col in normalized.columns:
+        if normalized[col].dtype == object:
+            normalized[col] = normalized[col].apply(safe_json_loads)
+        normalized[col] = normalized[col].apply(_make_serializable)
+
+    return normalized.astype(object).where(pd.notnull(normalized), None)
 
 
 def fix_json_strings(gdf):
@@ -289,9 +397,7 @@ def parseOutput(output):
         json_output['data'] = output
         json_output['dataType'] = type(output).__name__
     elif isinstance(output, pd.DataFrame) and not isinstance(output, gpd.GeoDataFrame):
-        # json_output['data'] = output.to_dict(orient='list')
-        clean_df = output.astype(object).where(pd.notnull(output), None)
-        clean_df = make_json_safe(clean_df)
+        clean_df = normalize_dataframe_for_json(output)
         json_output['data'] = clean_df.to_dict(orient='list')
         json_output['dataType'] = 'dataframe'
     elif isinstance(output, gpd.GeoDataFrame):
@@ -313,3 +419,266 @@ def parseOutput(output):
         json_output['dataType'] = 'outputs'
 
     return json_output
+
+#DuckDB handlers:
+def _make_id():
+    """Generate a unique id: {timestamp}_{hash}."""
+    timestamp = str(int(time.time() * 1000))  # millisecond precision to avoid collisions
+    random_part = hashlib.sha256(os.urandom(16)).digest()[:4].hex()
+    return f"{timestamp}_{random_part}"
+
+
+def save_to_duckdb(value, node_id=None):
+    """
+    Save a Python value to the artifacts table.
+
+    Args:
+        value: the raw Python object (DataFrame, GeoDataFrame, int, str, list, dict, tuple, rasterio dataset, etc.)
+               OR a parsed output dict (from parseOutput) for compatibility.
+        node_id: the workflow node id that produced this artifact.
+
+    Returns:
+        str: the id of the new artifact row.
+    """
+    import time as _time
+    t_start = _time.perf_counter()
+
+    init_db()
+    con = get_connection()
+    try:
+        art_id = _make_id()
+
+        # --- Tuple: split into children + parent pointer row ---
+        if isinstance(value, tuple):
+            child_ids = [save_to_duckdb(child, node_id=node_id) for child in value]
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'outputs', json.dumps(child_ids)]
+            )
+            kind_logged = 'outputs'
+
+        # --- bool MUST come before int (bool is a subclass of int) ---
+        elif isinstance(value, bool):
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_int) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'bool', 1 if value else 0]
+            )
+            kind_logged = 'bool'
+
+        elif isinstance(value, int):
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_int) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'int', value]
+            )
+            kind_logged = 'int'
+
+        elif isinstance(value, float):
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_float) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'float', value]
+            )
+            kind_logged = 'float'
+
+        elif isinstance(value, str):
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'str', value]
+            )
+            kind_logged = 'str'
+
+        elif isinstance(value, list):
+            try:
+                # fast path: list of JSON-native values (ints, strs, simple nested lists/dicts)
+                payload = json.dumps(value)
+                con.execute(
+                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'list', payload]
+                )
+                kind_logged = 'list'
+            except TypeError:
+                # fallback: list contains DataFrames/GeoDataFrames/etc.
+                # recursively save each element as its own artifact, store the IDs here
+                child_ids = [save_to_duckdb(child, node_id=node_id) for child in value]
+                con.execute(
+                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'list_of_ids', json.dumps(child_ids)]
+                )
+                kind_logged = 'list_of_ids'
+
+        elif isinstance(value, dict):
+            try:
+                payload = json.dumps(value)
+                con.execute(
+                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'dict', payload]
+                )
+                kind_logged = 'dict'
+            except TypeError:
+                # fallback: dict values contain DataFrames/GeoDataFrames/etc.
+                child_id_map = {k: save_to_duckdb(v, node_id=node_id) for k, v in value.items()}
+                con.execute(
+                    "INSERT INTO artifacts (id, node_id, kind, value_json) VALUES (?, ?, ?, ?)",
+                    [art_id, node_id, 'dict_of_ids', json.dumps(child_id_map)]
+                )
+                kind_logged = 'dict_of_ids'
+
+        # --- GeoDataFrame MUST come before DataFrame (gpd.GeoDataFrame subclasses pd.DataFrame) ---
+        elif isinstance(value, gpd.GeoDataFrame):
+            buf = io.BytesIO()
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(
+                value,
+                geometry_col=value.geometry.name,
+            )
+            prepared.to_parquet(buf)  # GeoParquet — CRS preserved automatically
+            # parquet drops Python-side attributes like ``gdf.metadata`` (set by
+            # parse_geodataframe when upstream JSON carried a metadata.name). VIS_UTK
+            # hard-requires that name (useUTK.ts early-returns without it, which
+            # leaves disablePlay=true and stalls the play button), so stash it in
+            # value_json and restore on load.
+            meta = getattr(value, 'metadata', None)
+            meta_json = _serialize_parquet_meta(
+                frame_metadata=meta,
+                encoded_object_columns=encoded_object_columns,
+            )
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
+                [art_id, node_id, 'geodataframe', buf.getvalue(), meta_json]
+            )
+            kind_logged = f'geodataframe rows={len(value)}'
+
+        elif isinstance(value, pd.DataFrame):
+            buf = io.BytesIO()
+            prepared, encoded_object_columns = _prepare_frame_for_parquet(value)
+            prepared.to_parquet(buf, engine='pyarrow', index=False)
+            meta_json = _serialize_parquet_meta(
+                encoded_object_columns=encoded_object_columns,
+            )
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, blob, value_json) VALUES (?, ?, ?, ?, ?)",
+                [art_id, node_id, 'dataframe', buf.getvalue(), meta_json]
+            )
+            kind_logged = f'dataframe rows={len(value)}'
+
+        elif isinstance(value, rasterio.io.DatasetReader):
+            con.execute(
+                "INSERT INTO artifacts (id, node_id, kind, value_str) VALUES (?, ?, ?, ?)",
+                [art_id, node_id, 'raster', value.name]
+            )
+            kind_logged = 'raster'
+
+        else:
+            raise TypeError(f"save_to_duckdb: unsupported type {type(value)}")
+
+        elapsed = _time.perf_counter() - t_start
+        print(f"[duckdb] save {kind_logged} id={art_id} node={node_id} took={elapsed:.4f}s")
+        return art_id
+
+    finally:
+        con.close()
+
+
+def load_from_duckdb(art_id):
+    """
+    Load an artifact by id.
+
+    Returns the reconstructed Python value (DataFrame, GeoDataFrame, tuple, int, etc.).
+    """
+    import time as _time
+    t_start = _time.perf_counter()
+
+    con = get_connection()
+    try:
+        row = con.execute(
+            "SELECT kind, value_int, value_float, value_str, value_json, blob "
+            "FROM artifacts WHERE id = ?",
+            [art_id]
+        ).fetchone()
+
+        if row is None:
+            raise KeyError(f"No artifact with id {art_id}")
+
+        kind, v_int, v_float, v_str, v_json, blob = row
+
+        if kind == 'bool':
+            result = bool(v_int)
+        elif kind == 'int':
+            result = v_int
+        elif kind == 'float':
+            result = v_float
+        elif kind == 'str':
+            result = v_str
+        elif kind == 'list':
+            result = json.loads(v_json)
+        elif kind == 'dict':
+            result = json.loads(v_json)
+        # elif kind == 'dataframe':
+        #     result = pd.read_parquet(io.BytesIO(blob))
+        # elif kind == 'geodataframe':
+        #     result = gpd.read_parquet(io.BytesIO(blob))
+        elif kind == 'dataframe':
+            result = pd.read_parquet(io.BytesIO(blob))
+            _, encoded_object_columns = _parse_parquet_meta(v_json)
+            result = _restore_frame_from_parquet(result, encoded_object_columns)
+        elif kind == 'geodataframe':
+            result = gpd.read_parquet(io.BytesIO(blob))
+            frame_meta, encoded_object_columns = _parse_parquet_meta(v_json)
+            result = _restore_frame_from_parquet(
+                result,
+                encoded_object_columns,
+                geometry_col=result.geometry.name,
+            )
+            # Restore the .metadata attribute stashed at save time (see save_to_duckdb).
+            if frame_meta:
+                result.__dict__['metadata'] = frame_meta
+        elif kind == 'raster':
+            result = rasterio.open(v_str)
+        elif kind == 'list_of_ids':
+            child_ids = json.loads(v_json)
+            con.close()                       # close before recursing — one conn per call
+            result = [load_from_duckdb(cid) for cid in child_ids]
+            elapsed = _time.perf_counter() - t_start
+            print(f"[duckdb] load list_of_ids id={art_id} children={len(child_ids)} took={elapsed:.4f}s")
+            return result
+        elif kind == 'dict_of_ids':
+            child_id_map = json.loads(v_json)
+            con.close()
+            result = {k: load_from_duckdb(cid) for k, cid in child_id_map.items()}
+            elapsed = _time.perf_counter() - t_start
+            print(f"[duckdb] load dict_of_ids id={art_id} children={len(child_id_map)} took={elapsed:.4f}s")
+            return result
+        elif kind == 'outputs':
+            child_ids = json.loads(v_json)
+            # Close this connection before recursing (one connection per call)
+            con.close()
+            result = tuple(load_from_duckdb(cid) for cid in child_ids)
+            elapsed = _time.perf_counter() - t_start
+            print(f"[duckdb] load outputs id={art_id} children={len(child_ids)} took={elapsed:.4f}s")
+            return result
+        else:
+            raise ValueError(f"Unknown kind: {kind}")
+
+        elapsed = _time.perf_counter() - t_start
+        print(f"[duckdb] load {kind} id={art_id} took={elapsed:.4f}s")
+        return result
+
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+def detect_kind(obj):
+    """Return the Curio 'kind' string for a Python object (no conversion)."""
+    # bool MUST come before int
+    if isinstance(obj, bool): return 'bool'
+    if isinstance(obj, int): return 'int'
+    if isinstance(obj, float): return 'float'
+    if isinstance(obj, str): return 'str'
+    if isinstance(obj, list): return 'list'
+    if isinstance(obj, dict): return 'dict'
+    # GeoDataFrame MUST come before DataFrame
+    if isinstance(obj, gpd.GeoDataFrame): return 'geodataframe'
+    if isinstance(obj, pd.DataFrame): return 'dataframe'
+    if isinstance(obj, rasterio.io.DatasetReader): return 'raster'
+    if isinstance(obj, tuple): return 'outputs'
+    return 'unknown'

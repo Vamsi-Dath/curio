@@ -98,6 +98,22 @@ interface FlowContextProps {
     eraseWorkflowSuggestions: () => void;
     acceptSuggestion: (nodeId: string) => void;
     updateKeywords: (trill: any) => void;
+
+    // Project state
+    projectId: string | null;
+    projectName: string;
+    projectDirty: boolean;
+    projectSavedAt: Date | null;
+    nodeExecStatus: Record<string, "stale" | "executed">;
+
+    // Project operations
+    saveCurrentProject: (nameOverride?: string) => Promise<any>;
+    saveAsNewProject: (name: string) => Promise<any>;
+    loadProject: (id: string) => Promise<any>;
+    discardProject: () => void;
+    markDirty: () => void;
+    markNodeExecuted: (nodeId: string) => void;
+    markNodeStale: (nodeId: string) => void;
 }
 
 // Stable context for NodeContainer — only updates when goal/minimized change, NOT on node drag
@@ -182,13 +198,35 @@ export const FlowContext = createContext<FlowContextProps>({
     setPackages: () => {},
     addPackage: () => {},
     removePackage: () => {},
+
+    // Project defaults
+    projectId: null,
+    projectName: "",
+    projectDirty: false,
+    projectSavedAt: null,
+    nodeExecStatus: {},
+    saveCurrentProject: async () => {},
+    saveAsNewProject: async () => {},
+    loadProject: async () => {},
+    discardProject: () => {},
+    markDirty: () => {},
+    markNodeExecuted: () => {},
+    markNodeStale: () => {},
 });
 
 const FlowProvider = ({ children }: { children: ReactNode }) => {
     const { showToast } = useToastContext();
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-    const [outputs, setOutputs] = useState<IOutput[]>([]);
+    const [outputs, _setOutputs] = useState<IOutput[]>([]);
+    const outputsRef = useRef<IOutput[]>([]);
+    const setOutputs = useCallback((fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => {
+        _setOutputs((prev) => {
+            const next = typeof fnOrValue === "function" ? fnOrValue(prev) : fnOrValue;
+            outputsRef.current = next;
+            return next;
+        });
+    }, []);
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
 
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
@@ -209,7 +247,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const [loading, setLoading] = useState<boolean>(false);
 
-    const [workflowName, _setWorkflowName] = useState<string>("DefaultWorkflow");
+    const [workflowName, _setWorkflowName] = useState<string>("DefaultDataflow");
     const workflowNameRef = React.useRef(workflowName);
     const setWorkflowName = useCallback((data: any) => {
         workflowNameRef.current = data;
@@ -218,11 +256,20 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const initializeProvenance = async () => {
         setLoading(true);
-        await addWorkflow(workflowNameRef.current);
-        let empty_trill = TrillGenerator.generateTrill([], [], workflowNameRef.current);
-        TrillGenerator.intializeProvenance(empty_trill);
-        setLoading(false);
-    }
+        try {
+            await addWorkflow(workflowNameRef.current);
+            const empty_trill = TrillGenerator.generateTrill(
+                [],
+                [],
+                workflowNameRef.current,
+            );
+            TrillGenerator.intializeProvenance(empty_trill);
+        } catch (e) {
+            console.error("initializeProvenance failed:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
         initializeProvenance();
@@ -804,7 +851,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const workflowOps = useWorkflowOperations({
         nodes, edges,
         setNodes, setEdges,
-        setOutputs, setInteractions,
+        setOutputs, outputsRef, setInteractions,
         setDashboardPins, setPositionsInDashboard, setPositionsInWorkflow,
         setWorkflowName,
         workflowNameRef,

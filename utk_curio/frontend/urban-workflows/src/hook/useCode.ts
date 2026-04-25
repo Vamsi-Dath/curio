@@ -24,6 +24,8 @@ type CreateCodeNodeOptions = {
     inType?: string;
     out?: string;
     keywords?: number[];
+    nodeWidth?: number;
+    nodeHeight?: number;
 };
 
 interface IUseCode {
@@ -72,6 +74,26 @@ export function useCode(): IUseCode {
         for(const node of trill.dataflow.nodes){
             let x = node.x;
             let y = node.y;
+            const parsedWidth =
+                typeof node.width === "number"
+                    ? node.width
+                    : typeof node.nodeWidth === "number"
+                        ? node.nodeWidth
+                        : typeof node.metadata?.width === "number"
+                            ? node.metadata.width
+                            : typeof node.metadata?.nodeWidth === "number"
+                                ? node.metadata.nodeWidth
+                                : undefined;
+            const parsedHeight =
+                typeof node.height === "number"
+                    ? node.height
+                    : typeof node.nodeHeight === "number"
+                        ? node.nodeHeight
+                        : typeof node.metadata?.height === "number"
+                            ? node.metadata.height
+                            : typeof node.metadata?.nodeHeight === "number"
+                                ? node.metadata.nodeHeight
+                                : undefined;
 
             if(x == undefined || y == undefined){
                 let position = getPosition();
@@ -99,6 +121,12 @@ export function useCode(): IUseCode {
 
             if(node.metadata != undefined && node.metadata.keywords != undefined)
                 nodeMeta.keywords = node.metadata.keywords;
+
+            if(typeof parsedWidth === "number")
+                nodeMeta.nodeWidth = parsedWidth;
+
+            if(typeof parsedHeight === "number")
+                nodeMeta.nodeHeight = parsedHeight;
 
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
@@ -168,7 +196,9 @@ export function useCode(): IUseCode {
             goal = "",
             inType = "DEFAULT",
             out = "DEFAULT",
-            keywords = []
+            keywords = [],
+            nodeWidth = undefined,
+            nodeHeight = undefined,
         } = options;
 
         const node: Node = {
@@ -191,6 +221,8 @@ export function useCode(): IUseCode {
                 goal,
                 in: inType,
                 out,
+                nodeWidth,
+                nodeHeight,
                 input: "",
                 inputTypes: [],
                 keywords,

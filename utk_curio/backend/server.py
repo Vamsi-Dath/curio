@@ -12,6 +12,7 @@ if __name__ == '__main__':
         host=os.getenv('FLASK_BACKEND_HOST', 'localhost'),
         port=int(os.getenv('FLASK_BACKEND_PORT', 5002)),
         threaded=False,
-        debug=True
+        debug=True,
+        use_reloader=os.getenv('FLASK_USE_RELOADER', '1') != '0',
     )
 

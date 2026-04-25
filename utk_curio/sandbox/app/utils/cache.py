@@ -1,3 +1,4 @@
+from flask import request, current_app
 from flask import request
 
 def make_key():
@@ -7,5 +8,13 @@ def make_key():
     :returns: unique string for which the value should be cached.
     """
     user_data = request.get_json()
-    # app.logger.info(f'make_key(): {user_data}')
+    current_app.logger.info(f'make_key(): {user_data}')
+
+    # response = cache._load_osm_from_cache(query)
+
+    # if not response:
+    #     time.sleep(1) # avoiding Overpass 429 Too Many Requests
+    #     response = api.get(query, build=False)
+    #     cache._save_osm_to_cache(query,response)
+
     return ",".join([f"{key}={value}" for key, value in user_data.items()])

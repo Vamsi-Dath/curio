@@ -5,133 +5,290 @@ import React, {
   useEffect,
   useState,
 } from "react";
-import Cookies from "js-cookie";
-
+import {
+  authApi,
+  clearToken,
+  getToken,
+  setToken,
+  UserData,
+} from "../utils/authApi";
 import { Loading } from "../components/login/Loading";
 import { useProvenanceContext } from "./ProvenanceProvider";
 
-interface IUser {
-  name: string;
-  profile_image: string;
-  type: "expert" | "programmer" | null;
-}
-
 interface UserProviderProps {
-  user: IUser | null;
-  googleSignIn: (googleCode: string) => Promise<IUser | null>;
+  user: UserData | null;
+  loading: boolean;
+  isAuthenticated: boolean;
+  enableUserAuth: boolean;
+  skipProjectPage: boolean;
+  allowGuest: boolean;
+  googleClientId: string;
+  signup: (data: {
+    name: string;
+    username: string;
+    password: string;
+    email?: string;
+  }) => Promise<UserData | null>;
+  signin: (identifier: string, password: string) => Promise<UserData | null>;
+  signinGuest: () => Promise<UserData | null>;
+  signinWithGoogle: (code: string) => Promise<UserData | null>;
+  signout: () => Promise<void>;
+  updateProfile: (data: {
+    name?: string;
+    email?: string;
+    type?: string;
+  }) => Promise<void>;
   saveUserType: (newType: "programmer" | "expert") => Promise<void>;
+  googleSignIn: (googleCode: string) => Promise<UserData | null>;
   logout: () => void;
 }
 
 export const UserContext = createContext<UserProviderProps>({
   user: null,
-  googleSignIn: async () => {
-    return null;
-  },
+  loading: false,
+  isAuthenticated: false,
+  enableUserAuth: true,
+  skipProjectPage: false,
+  allowGuest: false,
+  googleClientId: process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || "",
+  signup: async () => null,
+  signin: async () => null,
+  signinGuest: async () => null,
+  signinWithGoogle: async () => null,
+  signout: async () => {},
+  updateProfile: async () => {},
   saveUserType: async () => {},
+  googleSignIn: async () => null,
   logout: () => {},
 });
 
 const UserProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<IUser | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
+  const [user, setUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [enableUserAuth, setEnableUserAuth] = useState<boolean>(true);
+  const [skipProjectPage, setSkipProjectPage] = useState<boolean>(false);
+  const [allowGuest, setAllowGuest] = useState<boolean>(false);
+  const [googleClientId, setGoogleClientId] = useState<string>(
+    process.env.VITE_GOOGLE_OAUTH_CLIENT_ID || ""
+  );
 
   const { addUser } = useProvenanceContext();
 
-  const googleSignIn = useCallback(async (googleCode: string) => {
-    setLoading(true);
-    try {
-      const response = await fetch(process.env.BACKEND_URL + "/signin", {
-        method: "POST",
-        body: JSON.stringify({
-          token: googleCode,
-        }),
-        headers: {
-          "Content-type": "application/json; charset=UTF-8",
-        },
-      });
-      const json = await response.json();
-
-      // write user to the provenance database
-      addUser(json.user.name, json.user.type, "");
-
-      setUser(json.user);
-      Cookies.set("session_token", json.token);
-      setLoading(false);
-
-      return json.user;
-    } catch (error) {
-      setLoading(false);
-      console.error(error);
-    }
+  const applyUser = useCallback((nextUser: UserData) => {
+    setUser(nextUser);
+    return nextUser;
   }, []);
 
-  const saveUserType = useCallback(async (type: "programmer" | "expert") => {
-    setLoading(true);
-    try {
-      const response = await fetch(process.env.BACKEND_URL + "/saveUserType", {
-        method: "POST",
-        body: JSON.stringify({
-          type,
-        }),
-        headers: {
-          "Content-type": "application/json; charset=UTF-8",
-          Authorization: Cookies.get("session_token") || "",
-        },
-      });
-      const json = await response.json();
-      setUser(json.user);
-    } catch (e) {}
-
-    setLoading(false);
-  }, []);
-
-  const logout = useCallback(() => {
-    Cookies.remove("session_token");
-    setUser(null);
-  }, []);
+  const handleAuth = useCallback(
+    (res: { user: UserData; token: string }) => {
+      setToken(res.token);
+      const nextUser = applyUser(res.user);
+      addUser(nextUser.name, nextUser.type || "", "");
+      return nextUser;
+    },
+    [addUser, applyUser]
+  );
 
   useEffect(() => {
-    const sessionToken = Cookies.get("session_token");
-    if (!sessionToken) return;
+    let cancelled = false;
 
-    setLoading(true);
-    fetch(process.env.BACKEND_URL + "/getUser", {
-      method: "GET",
-      headers: {
-        Authorization: sessionToken,
-      },
-    })
-      .then((response) => response.json())
-      .then((json) => {
-        setUser(json.user);
-      })
-      .finally(() => setLoading(false));
+    const bootstrap = async () => {
+      setLoading(true);
+      try {
+        const cfg = await authApi.getPublicConfig().catch(() => null);
+        const projectPageSkipped = Boolean(
+          cfg?.skip_project_page ?? cfg?.curio_no_project ?? false
+        );
+        // ``enable_user_auth`` was removed from the public config: auth is
+        // considered enabled unless the backend has explicitly opted out via
+        // ``CURIO_NO_AUTH`` or the ``CURIO_NO_PROJECT`` shortcut.
+        const authSkipped =
+          Boolean(cfg?.curio_no_auth ?? false) || projectPageSkipped;
+        const authEnabled = !authSkipped;
+        const sharedGuestUsername = cfg?.shared_guest_username ?? "guest_shared";
+
+        if (cancelled) return;
+
+        setEnableUserAuth(authEnabled);
+        setSkipProjectPage(projectPageSkipped);
+        setAllowGuest(Boolean(authEnabled && cfg?.allow_guest_login));
+        if (cfg?.google_client_id) {
+          setGoogleClientId(cfg.google_client_id);
+        }
+
+        const token = getToken();
+
+        if (!authEnabled) {
+          if (token) {
+            try {
+              const current = await authApi.getMe();
+              if (
+                !cancelled &&
+                current.is_guest &&
+                current.username === sharedGuestUsername
+              ) {
+                applyUser(current);
+                return;
+              }
+            } catch {
+              // fall through to shared auto guest bootstrap
+            }
+            clearToken();
+            if (!cancelled) setUser(null);
+          }
+
+          const res = await authApi.signinAutoGuest();
+          if (!cancelled) handleAuth(res);
+          return;
+        }
+
+        if (!token) {
+          if (!cancelled) setUser(null);
+          return;
+        }
+
+        try {
+          const current = await authApi.getMe();
+          if (!cancelled) {
+            applyUser(current);
+          }
+        } catch {
+          clearToken();
+          if (!cancelled) setUser(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    };
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // TODO: implement loading layout
+  const signup = useCallback(
+    async (data: {
+      name: string;
+      username: string;
+      password: string;
+      email?: string;
+    }) => {
+      setLoading(true);
+      try {
+        const res = await authApi.signup(data);
+        return handleAuth(res);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleAuth]
+  );
+
+  const signin = useCallback(
+    async (identifier: string, password: string) => {
+      setLoading(true);
+      try {
+        const res = await authApi.signin({ identifier, password });
+        return handleAuth(res);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleAuth]
+  );
+
+  const signinWithGoogle = useCallback(
+    async (code: string) => {
+      setLoading(true);
+      try {
+        const res = await authApi.signinGoogle(code);
+        return handleAuth(res);
+      } catch (e) {
+        console.error(e);
+        return null;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [handleAuth]
+  );
+
+  const signinGuest = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await authApi.signinGuest();
+      return handleAuth(res);
+    } catch (e) {
+      console.error(e);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  }, [handleAuth]);
+
+  const signout = useCallback(async () => {
+    if (!enableUserAuth) {
+      return;
+    }
+    try {
+      await authApi.signout();
+    } catch {
+      return;
+    }
+    clearToken();
+    setUser(null);
+  }, [enableUserAuth]);
+
+  const updateProfile = useCallback(
+    async (data: { name?: string; email?: string; type?: string }) => {
+      const updated = await authApi.patchMe(data);
+      setUser(updated);
+    },
+    []
+  );
+
+  const saveUserType = useCallback(
+    async (newType: "programmer" | "expert") => {
+      await updateProfile({ type: newType });
+    },
+    [updateProfile]
+  );
+
   return (
     <UserContext.Provider
       value={{
         user,
-        googleSignIn,
+        loading,
+        isAuthenticated: !!user,
+        enableUserAuth,
+        skipProjectPage,
+        allowGuest,
+        googleClientId,
+        signup,
+        signin,
+        signinGuest,
+        signinWithGoogle,
+        signout,
+        updateProfile,
         saveUserType,
-        logout,
+        googleSignIn: signinWithGoogle,
+        logout: signout,
       }}
     >
-      {loading && <Loading />}
-      {children}
+      {loading ? <Loading /> : children}
     </UserContext.Provider>
   );
 };
 
 export const useUserContext = () => {
   const context = useContext(UserContext);
-
   if (!context) {
     throw new Error("useUserContext must be used within a UserProvider");
   }
-
   return context;
 };
 

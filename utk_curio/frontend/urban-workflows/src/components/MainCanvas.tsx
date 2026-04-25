@@ -4,6 +4,7 @@ import ReactFlow, {
     Background,
     BackgroundVariant,
     ConnectionMode,
+    Controls,
     Edge,
     EdgeChange,
     NodeChange,
@@ -15,7 +16,6 @@ import { useToastContext } from "../providers/ToastProvider";
 import { NodeType, EdgeType } from "../constants";
 import { getAllNodeTypes } from "../registry";
 import UniversalNode from "./UniversalNode";
-import { UserMenu } from "./login/UserMenu";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
 import { RightClickMenu } from "./styles";
 import { useRightClickMenu } from "../hook/useRightClickMenu";
@@ -109,6 +109,19 @@ export function MainCanvas() {
 
     const reactFlow = useReactFlow();
     const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition} = useReactFlow();
+
+    // Test hook: expose the ReactFlow instance so Playwright can force a
+    // deterministic viewport (e.g. fitView with duration: 0) before taking
+    // screenshots. Kept unconditional — read-only from the outside and
+    // cheap — so e2e tests don't need a separate build flag.
+    useEffect(() => {
+        (window as any).__curio_reactFlow = reactFlow;
+        return () => {
+            if ((window as any).__curio_reactFlow === reactFlow) {
+                delete (window as any).__curio_reactFlow;
+            }
+        };
+    }, [reactFlow]);
 
     const {
         setDashBoardMode,
@@ -392,7 +405,6 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            <UserMenu />
             <ToolsMenu />
             <UpMenu
                 setDashBoardMode={(value) => handleDashboardToggle(value)}
@@ -431,6 +443,7 @@ export function MainCanvas() {
                 translateExtent={CANVAS_EXTENT}
             >
                 <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
+                <Controls />
                 {AIModeRef.current ? <WorkflowGoal /> : null}
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>

@@ -8,11 +8,20 @@
  */
 
 import { useEffect, useState, useCallback } from "react";
-import { Node, Edge, NodeChange, NodeRemoveChange, Connection, useReactFlow } from "reactflow";
+import {
+    Node,
+    Edge,
+    NodeChange,
+    NodeRemoveChange,
+    Connection,
+    useNodesInitialized,
+    useReactFlow,
+} from "reactflow";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { useToastContext } from "../providers/ToastProvider";
 import { updateNodeData, updateNodesByMap, updateEdgesByMap, extractNodeFieldMap, extractKeywordMaps } from "../utils/flowNodeUtils";
 import { TrillGenerator } from "../TrillGenerator";
+import { projectsApi, OutputRef } from "../api/projectsApi";
 
 export interface WorkflowOperationsDeps {
     nodes: Node[];
@@ -20,6 +29,7 @@ export interface WorkflowOperationsDeps {
     setNodes: any;
     setEdges: any;
     setOutputs: any;
+    outputsRef: React.MutableRefObject<Array<{ nodeId: string; output: string }>>;
     setInteractions: any;
     setDashboardPins: (value: any) => void;
     setPositionsInDashboard: (data: any) => void;
@@ -46,6 +56,7 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     } = deps;
 
     const reactFlow = useReactFlow();
+    const nodesInitialized = useNodesInitialized();
     const { newNode, addWorkflow } = useProvenanceContext();
     const { showToast } = useToastContext();
 
@@ -67,23 +78,86 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         setPackages((prev) => prev.filter((p) => p !== pkg));
     }, []);
 
+    // Project state
+    const [projectId, setProjectId] = useState<string | null>(null);
+    const [projectName, setProjectName] = useState<string>("");
+    const [projectDirty, setProjectDirty] = useState<boolean>(false);
+    const [projectSavedAt, setProjectSavedAt] = useState<Date | null>(null);
+    const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
+
+    const markDirty = useCallback(() => {
+        if (projectId) setProjectDirty(true);
+    }, [projectId]);
+
+    // beforeunload guard
+    useEffect(() => {
+        if (!projectDirty || !projectId) return;
+        const handler = (e: BeforeUnloadEvent) => {
+            e.preventDefault();
+            e.returnValue = "";
+        };
+        window.addEventListener("beforeunload", handler);
+        return () => window.removeEventListener("beforeunload", handler);
+    }, [projectDirty, projectId]);
+
     // ---------------------------------------------------------------------------
     // Effects
     // ---------------------------------------------------------------------------
 
     useEffect(() => {
-        if (fitViewOnLoad) {
-            const timeout = setTimeout(() => {
-                const currentNodes = reactFlow.getNodes();
-                if (currentNodes.length > 0) {
-                    reactFlow.fitView({ padding: 0.2 });
-                    setFitViewOnLoad(false);
-                }
-            }, 100); // small delay to ensure render cycle
-
-            return () => clearTimeout(timeout);
+        if (!fitViewOnLoad) {
+            return;
         }
-    }, [fitViewOnLoad]);
+
+        let timeoutId: number | undefined;
+        let frameId = 0;
+        let attempts = 0;
+
+        const fitOptions = { padding: 0.2 };
+
+        // React Flow skips fitView until every node has measured dimensions.
+        // Loading a workflow can race that measurement, so retry until the
+        // fit actually applies instead of clearing the flag after one attempt.
+        const attemptFitView = () => {
+            const currentNodes = reactFlow.getNodes();
+
+            if (currentNodes.length === 0) {
+                setFitViewOnLoad(false);
+                return;
+            }
+
+            const fitApplied = reactFlow.fitView(fitOptions);
+
+            if (!fitApplied) {
+                attempts += 1;
+
+                if (attempts >= 20) {
+                    setFitViewOnLoad(false);
+                    return;
+                }
+
+                timeoutId = window.setTimeout(
+                    attemptFitView,
+                    nodesInitialized ? 50 : 100,
+                );
+                return;
+            }
+
+            timeoutId = window.setTimeout(() => {
+                reactFlow.fitView(fitOptions);
+                setFitViewOnLoad(false);
+            }, 75);
+        };
+
+        frameId = window.requestAnimationFrame(attemptFitView);
+
+        return () => {
+            window.cancelAnimationFrame(frameId);
+            if (timeoutId !== undefined) {
+                window.clearTimeout(timeoutId);
+            }
+        };
+    }, [fitViewOnLoad, nodesInitialized, reactFlow]);
 
     useEffect(() => {
         flagAcceptableSuggestions(nodes, edges);
@@ -402,6 +476,121 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     }
 
     // ---------------------------------------------------------------------------
+    // Project Operations
+    // ---------------------------------------------------------------------------
+
+    /**
+     * Normalize the heterogeneous ``IOutput.output`` shape into the backend's
+     * ``OutputRef`` contract.
+     *
+     * Different node types populate ``o.output`` differently: code / widget
+     * nodes forward the sandbox response object ``{ path, dataType, ... }``
+     * verbatim, while other paths store a bare filename string. The backend
+     * (see ``app/common/safe_paths.validate_component``) now strictly rejects
+     * anything that isn't a single safe string segment, so we coerce here at
+     * the serialization boundary and drop refs we can't normalize.
+     */
+    const buildOutputRefs = (): OutputRef[] =>
+        deps.outputsRef.current
+            .map((o: any) => {
+                const raw = o?.output;
+                const filename =
+                    typeof raw === "string"
+                        ? raw
+                        : typeof raw?.path === "string"
+                            ? raw.path
+                            : null;
+                if (!filename || !o?.nodeId) return null;
+                return { node_id: o.nodeId, filename };
+            })
+            .filter((r: OutputRef | null): r is OutputRef => r !== null);
+
+    const saveCurrentProject = useCallback(async (nameOverride?: string) => {
+        const currentNodes = reactFlow.getNodes();
+        const currentEdges = reactFlow.getEdges();
+        const spec = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
+
+        const outputRefs: OutputRef[] = buildOutputRefs();
+
+        const name = nameOverride || projectName || workflowNameRef.current;
+
+        if (projectId) {
+            const detail = await projectsApi.update(projectId, {
+                spec,
+                outputs: outputRefs,
+                name,
+            });
+            setProjectSavedAt(new Date());
+            setProjectDirty(false);
+            return detail;
+        } else {
+            const detail = await projectsApi.create({
+                name,
+                spec,
+                outputs: outputRefs,
+            });
+            setProjectId(detail.id);
+            setProjectName(detail.name);
+            setProjectSavedAt(new Date());
+            setProjectDirty(false);
+            return detail;
+        }
+    }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef]);
+
+    const saveAsNewProject = useCallback(async (name: string) => {
+        const currentNodes = reactFlow.getNodes();
+        const currentEdges = reactFlow.getEdges();
+        const spec = TrillGenerator.generateTrill(currentNodes, currentEdges, workflowNameRef.current);
+
+        const outputRefs: OutputRef[] = buildOutputRefs();
+
+        const detail = await projectsApi.create({
+            name,
+            spec,
+            outputs: outputRefs,
+        });
+        setProjectId(detail.id);
+        setProjectName(detail.name);
+        setProjectSavedAt(new Date());
+        setProjectDirty(false);
+        return detail;
+    }, [workflowNameRef, reactFlow, deps.outputsRef]);
+
+    const loadProject = useCallback(async (id: string) => {
+        const result = await projectsApi.get(id);
+        const { project, spec, outputs } = result;
+
+        setProjectId(project.id);
+        setProjectName(project.name);
+        setProjectDirty(false);
+        setProjectSavedAt(project.updated_at ? new Date(project.updated_at) : null);
+
+        const execStatus: Record<string, "stale" | "executed"> = {};
+        for (const o of outputs) {
+            execStatus[o.node_id] = "executed";
+        }
+        setNodeExecStatus(execStatus);
+
+        return result;
+    }, []);
+
+    const discardProject = useCallback(() => {
+        setProjectId(null);
+        setProjectName("");
+        setProjectDirty(false);
+        setProjectSavedAt(null);
+        setNodeExecStatus({});
+    }, []);
+
+    const markNodeExecuted = useCallback((nodeId: string) => {
+        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "executed" }));
+    }, []);
+
+    const markNodeStale = useCallback((nodeId: string) => {
+        setNodeExecStatus((prev) => ({ ...prev, [nodeId]: "stale" }));
+    }, []);
+
+    // ---------------------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------------------
 
@@ -419,6 +608,13 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         addPackage,
         removePackage,
 
+        // Project state
+        projectId,
+        projectName,
+        projectDirty,
+        projectSavedAt,
+        nodeExecStatus,
+
         // Operations
         updateDataNode,
         loadParsedTrill,
@@ -431,5 +627,14 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
         acceptSuggestion,
         eraseWorkflowSuggestions,
         applyRemoveChanges,
+
+        // Project operations
+        saveCurrentProject,
+        saveAsNewProject,
+        loadProject,
+        discardProject,
+        markDirty,
+        markNodeExecuted,
+        markNodeStale,
     };
 }

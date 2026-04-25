@@ -1,6 +1,9 @@
 import os
 
+import pytest
+
 from .utils import REPO_ROOT
+from .fixtures import _clean_db
 
 # ------------------------------------------------------------------ #
 # Workflow scenario discovery
@@ -70,6 +73,20 @@ def load_workflow_files_from_folder():
 # ------------------------------------------------------------------ #
 # Dynamic parametrization hook
 # ------------------------------------------------------------------ #
+
+@pytest.fixture(autouse=True)
+def e2e_clean_db(request, test_db_paths):
+    """Truncate mutable SQLAlchemy tables before and after each frontend test.
+
+    Scoped to ``test_frontend/`` via this conftest so ``test_projects`` /
+    ``test_users`` (their own ``app`` fixture) are not affected.  Uses HTTP
+    ``/api/testing/reset-db`` when ``CURIO_E2E_USE_EXISTING=1`` so the
+    running backend wipes its own sqlite file.
+    """
+    _clean_db(request, test_db_paths)
+    yield
+    _clean_db(request, test_db_paths)
+
 
 def pytest_generate_tests(metafunc):
     """Parametrize any test / fixture that requests ``loaded_workflow``.

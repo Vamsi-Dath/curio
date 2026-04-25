@@ -74,6 +74,8 @@ curio/
 └── requirements.txt                # Backend and sandbox dependencies
 ```
 
+For a step-by-step walkthrough of adding a new node type, including a worked example (`DATA_SUMMARY`), see [ADDING-NODES.md](ADDING-NODES.md). For a deep dive into how the system is structured (nodes, data flow, execution pipeline, provenance) see [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Installation Options
 
 ### Via pip (lightweight setup)
@@ -107,8 +109,6 @@ Refer to [USAGE.md](USAGE.md) for Docker instructions and frontend build steps.
 
 * Add new analytic operations as reusable nodes
 * Improve UI and metadata descriptions
-
-For a step-by-step walkthrough of adding a new node type — including a worked example (`DATA_SUMMARY`) — see [ADDING-NODES.md](ADDING-NODES.md).
 
 ### Example Workflows
 

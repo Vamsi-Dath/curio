@@ -2,7 +2,7 @@ import os
 import re
 import json
 import time
-import zlib
+# import zlib
 import shutil
 import textwrap
 from pathlib import Path
@@ -11,7 +11,8 @@ from urllib.request import urlopen, Request
 from urllib.error import URLError
 
 import allure
-from playwright.sync_api import Page, expect
+import pytest
+from playwright.sync_api import Error as PlaywrightError, Page, expect
 
 # Repo root is 4 levels up: test_frontend -> tests -> backend -> utk_curio -> curio-main
 REPO_ROOT = os.path.abspath(
@@ -26,13 +27,15 @@ WORKFLOW_SCREENSHOT_EXPECTED_DIR = os.path.join(
 
 
 def get_shared_data_dir() -> str:
-    """Directory where ``save_memory_mapped_file`` writes ``.data`` blobs.
+    """Directory where Curio writes its DuckDB artifact store.
 
-    Matches ``utk_curio/sandbox/util/parsers.py`` (``CURIO_LAUNCH_CWD`` +
+    Matches ``utk_curio/sandbox/util/db.py`` (``CURIO_LAUNCH_CWD`` +
     ``CURIO_SHARED_DATA``). Defaults ``CURIO_LAUNCH_CWD`` to the repo root
     so host-side Playwright resolves the same path as ``curio start`` when the
     subprocess uses ``cwd`` = repo root (and matches Docker once ``./.curio`` is
     bind-mounted to ``/app/.curio``).
+
+    The directory holds ``curio_data.duckdb``;
     """
     launch_dir = Path(
         os.environ.get("CURIO_LAUNCH_CWD", REPO_ROOT)
@@ -46,25 +49,42 @@ def get_shared_data_dir() -> str:
 # .data file helpers (zlib-compressed JSON, same format as parsers.py)
 # ---------------------------------------------------------------------------
 
-def load_dot_data(path: str) -> dict:
-    """Read a ``.data`` file (zlib-compressed JSON) and return the parsed dict."""
-    with open(path, "rb") as f:
-        return json.loads(zlib.decompress(f.read()).decode("utf-8"))
+# def load_dot_data(path: str) -> dict:
+#     """Read a ``.data`` file (zlib-compressed JSON) and return the parsed dict."""
+#     with open(path, "rb") as f:
+#         return json.loads(zlib.decompress(f.read()).decode("utf-8"))
 
 
-def save_dot_data(path: str, data: dict) -> None:
-    """Write *data* as zlib-compressed JSON to *path*."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    compressed = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
-    with open(path, "wb") as f:
-        f.write(compressed)
+# def save_dot_data(path: str, data: dict) -> None:
+#     """Write *data* as zlib-compressed JSON to *path*."""
+#     os.makedirs(os.path.dirname(path), exist_ok=True)
+#     compressed = zlib.compress(json.dumps(data, ensure_ascii=False).encode("utf-8"))
+#     with open(path, "wb") as f:
+#         f.write(compressed)
 
 
-def strip_volatile_keys(data: dict) -> dict:
-    """Return a shallow copy of *data* without per-run metadata (``filename``)."""
-    stripped = {**data}
-    stripped.pop("filename", None)
-    return stripped
+# def strip_volatile_keys(data: dict) -> dict:
+#     """Return a shallow copy of *data* without per-run metadata (``filename``)."""
+#     stripped = {**data}
+#     stripped.pop("filename", None)
+#     return stripped
+
+# ---------------------------------------------------------------------------
+# DuckDB artifact helpers
+# ---------------------------------------------------------------------------
+
+def load_artifact_as_dict(artifact_id: str) -> dict:
+    """Drop-in replacement for the old ``load_dot_data(path)`` — same shape of
+    return value, just sourced from the ``artifacts`` table instead of a
+    zlib-compressed ``.data`` file.
+    """
+    from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
+    parsed = parseOutput(load_from_duckdb(artifact_id))
+    # load_dot_data read a file that had been json.dumps'd at save time, so
+    # its return was always pure Python types (numpy → list, np.int64 → int).
+    # Preserve that invariant — callers compare dicts with ==, which raises
+    # ValueError on numpy arrays.
+    return json.loads(json.dumps(parsed, default=str))
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +126,140 @@ def resolve_widget_placeholders(code: str) -> str:
 PLAYWRIGHT_EXPECTED_DIR = os.path.join(
     REPO_ROOT, ".curio", "playwright", "expected"
 )
+
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+_FALSE_VALUES = {"0", "false", "no", "off"}
+
+
+def env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    return default
+
+
+def _backend_base_url_for_config() -> str:
+    """Resolve the backend URL for fetching ``/api/config/public``.
+
+    When attaching to an already-running stack (``CURIO_E2E_USE_EXISTING=1``)
+    or running the fixture-spawned subprocess, the backend's actual state
+    is the single source of truth for the auth/guest/project flags — the
+    pytest process env alone cannot reproduce it, because the ``curio start``
+    subprocess overrides these vars from its CLI flags.
+    """
+    host = os.environ.get("CURIO_E2E_HOST", "localhost")
+    port = os.environ.get("CURIO_E2E_BACKEND_PORT") or os.environ.get(
+        "BACKEND_PORT", "5002"
+    )
+    return f"http://{host}:{port}"
+
+
+_PUBLIC_CONFIG_CACHE: dict | None = None
+
+
+def _fetch_public_config() -> dict | None:
+    """Return the cached ``/api/config/public`` body, or ``None`` if offline.
+
+    Result is memoised for the pytest session because a Curio backend does
+    not change its auth flags at runtime (they're read from the process env
+    at import time). Callers treat ``None`` as "backend unreachable, fall
+    back to env inspection".
+    """
+    global _PUBLIC_CONFIG_CACHE
+    if _PUBLIC_CONFIG_CACHE is not None:
+        return _PUBLIC_CONFIG_CACHE
+    url = f"{_backend_base_url_for_config()}/api/config/public"
+    try:
+        req = Request(url, method="GET")
+        with urlopen(req, timeout=5) as resp:
+            if resp.getcode() != 200:
+                return None
+            body = resp.read().decode("utf-8") or "{}"
+            _PUBLIC_CONFIG_CACHE = json.loads(body)
+            return _PUBLIC_CONFIG_CACHE
+    except (URLError, OSError, ValueError):
+        return None
+
+
+def auth_enabled_env() -> bool:
+    """True when the running backend has user auth enabled.
+
+    Prefers the live backend's ``/api/config/public`` response so the pytest
+    process never disagrees with the backend subprocess (whose ``CURIO_NO_AUTH``
+    is set by ``curio.py start`` CLI flags, not inherited from pytest env).
+    Falls back to env vars when the backend is not yet reachable (e.g. fixture
+    setup phase before the port is bound).
+    """
+    cfg = _fetch_public_config()
+    if cfg is not None:
+        if cfg.get("curio_no_project") or cfg.get("skip_project_page"):
+            return False
+        return not bool(cfg.get("curio_no_auth"))
+    if env_flag("CURIO_NO_PROJECT", False):
+        return False
+    return not env_flag("CURIO_NO_AUTH", False)
+
+
+def allow_guest_login_env() -> bool:
+    """True when guest login is enabled on the running backend.
+
+    Like :func:`auth_enabled_env`, prefers the live ``/api/config/public``
+    response and only falls back to pytest-process env vars when the backend
+    is unreachable.
+    """
+    cfg = _fetch_public_config()
+    if cfg is not None:
+        return bool(cfg.get("allow_guest_login"))
+    if "ALLOW_GUEST_LOGIN" in os.environ:
+        return env_flag("ALLOW_GUEST_LOGIN", False)
+    return os.environ.get("CURIO_ENV", "dev") != "prod"
+
+
+def skip_project_page_env() -> bool:
+    """True when the running backend hides the ``/projects`` page.
+
+    Mirrors :func:`auth_enabled_env`: prefer the live backend's view (via
+    ``/api/config/public``) over pytest-process env inspection, since the
+    ``curio start`` subprocess sets ``CURIO_NO_PROJECT`` from its CLI flags
+    and pytest does not inherit that.
+    """
+    cfg = _fetch_public_config()
+    if cfg is not None:
+        return bool(cfg.get("skip_project_page") or cfg.get("curio_no_project"))
+    return env_flag("CURIO_NO_PROJECT", False)
+
+
+def require_user_auth() -> None:
+    if not auth_enabled_env():
+        pytest.skip("This test requires CURIO_NO_AUTH=0")
+
+
+def require_project_page() -> None:
+    """Skip the current test when Curio is running in ``--no-project`` mode.
+
+    Tests that drive the ``/projects`` list page or the per-user save/load
+    File-menu entries should call this so they're skipped (rather than
+    timing out on missing UI) when the backend reports
+    ``curio_no_project=true``.
+    """
+    if skip_project_page_env():
+        pytest.skip("This test requires CURIO_NO_PROJECT=0")
+
+
+def require_no_project_mode() -> None:
+    """Skip the current test unless Curio is running in ``--no-project`` mode.
+
+    Inverse of :func:`require_project_page`: tests that specifically assert
+    the no-project UI (e.g. that the File menu hides project-backed entries)
+    only make sense when the backend reports ``curio_no_project=true``.
+    """
+    if not skip_project_page_env():
+        pytest.skip("This test requires CURIO_NO_PROJECT=1")
 
 
 # ---------------------------------------------------------------------------
@@ -244,10 +398,10 @@ def compare_svg_structure(
 def _ensure_parsers_env():
     """Ensure ``CURIO_LAUNCH_CWD`` and ``CURIO_SHARED_DATA`` are set.
 
-    ``save_memory_mapped_file`` uses ``CURIO_SHARED_DATA`` with
-    ``Path.relative_to`` and requires an absolute path.  When the test
-    process is *not* started via ``curio start`` (e.g. ``CURIO_E2E_USE_EXISTING``
-    in CI) these variables may be absent.
+    ``get_db_path`` in ``utk_curio/sandbox/util/db.py`` reads these to
+    resolve the path to ``curio_data.duckdb``.  When the test process is
+    *not* started via ``curio start`` (e.g. ``CURIO_E2E_USE_EXISTING`` in
+    CI) these variables may be absent, so we default them here.
     """
     if "CURIO_LAUNCH_CWD" not in os.environ:
         os.environ["CURIO_LAUNCH_CWD"] = REPO_ROOT
@@ -256,16 +410,16 @@ def _ensure_parsers_env():
             Path(os.path.join(REPO_ROOT, ".curio", "data")).resolve()
         )
 
-
+"""
 def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
-    """Execute every code node in-process and return *{node_id: expected_path}*.
+    #Execute every code node in-process and return *{node_id: expected_path}*.
 
-    Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream data,
-    call user code, serialise via ``parseOutput`` / ``save_memory_mapped_file``
-    — but runs entirely inside the test process.  Results are copied to
-    ``.curio/playwright/expected/<workflow>/`` for later comparison with the
-    browser-produced ``.data`` files.
-    """
+    # Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream data,
+    # call user code, serialise via ``parseOutput`` / ``save_memory_mapped_file``
+    # — but runs entirely inside the test process.  Results are copied to
+    # ``.curio/playwright/expected/<workflow>/`` for later comparison with the
+    # browser-produced ``.data`` files.
+    #
     _ensure_parsers_env()
 
     from utk_curio.sandbox.util.parsers import (
@@ -359,6 +513,176 @@ def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
         os.chdir(original_cwd)
 
     return expected
+"""
+
+def execute_workflow_programmatically(spec, seed: int = 42) -> dict[str, str]:
+    """Execute every code node in-process and return *{node_id: duckdb_artifact_id}*.
+
+    Mirrors the sandbox ``python_wrapper.txt`` flow — load upstream inputs
+    from DuckDB, call user code, save the raw result back to DuckDB —
+    but runs entirely inside the test process.  The returned mapping is
+    later used by Playwright tests to compare the browser-produced
+    artifact with the programmatically-produced one.
+    """
+    _ensure_parsers_env()
+
+    from utk_curio.sandbox.util.parsers import (
+        load_from_duckdb,
+        save_to_duckdb,
+        detect_kind,
+        checkIOType,
+    )
+
+    outputs: dict[str, dict] = {}   # node_id → {"path": <id>, "dataType": ...}
+    expected: dict[str, str] = {}   # node_id → duckdb artifact id
+
+    # User code uses relative paths (e.g. "docs/examples/data/…") that are
+    # resolved from the repo root — the same CWD the sandbox uses via
+    # CURIO_LAUNCH_CWD.  Switch CWD for the duration of execution.
+    original_cwd = os.getcwd()
+    os.chdir(REPO_ROOT)
+    try:
+        for node in spec.topo_sorted_nodes():
+            # Non-code nodes: propagate upstream output without execution
+            if node.category != "code":
+                upstreams = spec.upstream_nodes(node.id)
+                if len(upstreams) == 1 and upstreams[0] in outputs:
+                    outputs[node.id] = outputs[upstreams[0]]
+                elif len(upstreams) > 1:
+                    outputs[node.id] = {
+                        "path": [outputs[uid] for uid in upstreams if uid in outputs],
+                        "dataType": "outputs",
+                    }
+                continue
+
+            # --- resolve input (mirrors python_wrapper.txt) ---
+            upstreams = spec.upstream_nodes(node.id)
+            if not upstreams:
+                # incoming = ""
+                incoming = None
+            elif len(upstreams) == 1:
+                up = outputs[upstreams[0]]
+                if up.get("dataType") == "outputs":
+                    incoming = [load_from_duckdb(elem["path"]) for elem in up["path"]]
+                else:
+                    incoming = load_from_duckdb(up["path"])
+            else:
+                incoming = [load_from_duckdb(outputs[uid]["path"]) for uid in upstreams]
+
+            # Validate input shape via a synthetic dict (same trick as the wrapper)
+            # if incoming != "":
+            if incoming is not None:
+                if isinstance(incoming, list):
+                    synthetic_in = {
+                        "dataType": "outputs",
+                        "data": [{"dataType": detect_kind(v), "data": None} for v in incoming],
+                    }
+                else:
+                    synthetic_in = {"dataType": detect_kind(incoming), "data": None}
+                checkIOType(synthetic_in, node.type)
+
+            # --- exec seeded user code ---
+            resolved = resolve_widget_placeholders(node.content)
+            seeded = seed_node_code(resolved, seed)
+
+            # Provide the same top-level imports as python_wrapper.txt
+            import warnings as _w; _w.filterwarnings("ignore")
+            import rasterio, geopandas, pandas, mmap, hashlib, ast  # noqa: F811
+            ns: dict = {
+                "warnings": _w, "rasterio": rasterio,
+                "gpd": geopandas, "geopandas": geopandas,
+                "pd": pandas, "pandas": pandas,
+                "json": json, "mmap": mmap, "os": os,
+                "time": time, "hashlib": hashlib, "ast": ast,
+            }
+            exec(
+                "def userCode(arg):\n" + textwrap.indent(seeded, "    "),
+                ns,
+            )
+            result = ns["userCode"](incoming)
+
+            # --- validate & persist (same as wrapper) ---
+            out_kind = detect_kind(result)
+            if out_kind == "outputs":
+                synthetic_out = {
+                    "dataType": "outputs",
+                    "data": [{"dataType": detect_kind(v), "data": None} for v in result],
+                }
+            else:
+                synthetic_out = {"dataType": out_kind, "data": None}
+            checkIOType(synthetic_out, node.type, False)
+
+            artifact_id = save_to_duckdb(result, node_id=node.type)
+
+            outputs[node.id] = {"path": artifact_id, "dataType": out_kind}
+            expected[node.id] = artifact_id
+    finally:
+        os.chdir(original_cwd)
+
+    return expected
+
+
+def _wait_for_reactflow_ready(
+    page: Page,
+    *,
+    padding: float = 0.2,
+    stable_frames: int = 3,
+    timeout_ms: int = 10000,
+) -> None:
+    """Force ReactFlow into a deterministic viewport before screenshotting.
+
+    Without this, ``save_workflow_test_screenshot`` races the app-side
+    ``fitView`` call in ``useWorkflowOperations`` (which runs on a
+    ``setTimeout`` after the workflow is uploaded). The screenshot can
+    fire before the transform has been applied, producing a pre-fit
+    canvas where nodes overflow the viewport.
+
+    Strategy:
+
+    1. Wait until at least one ``.react-flow__node`` is on the page.
+    2. Call ``fitView({ padding, duration: 0 })`` on the instance
+       exposed at ``window.__curio_reactFlow`` (see ``MainCanvas.tsx``).
+       ``duration: 0`` skips the ReactFlow animation so the transform
+       is applied synchronously.
+    3. Poll the ``.react-flow__viewport`` ``transform`` attribute until
+       it has stayed identical for ``stable_frames`` consecutive reads
+       (guards against Monaco's layout settling and any late
+       node-size measurements from ReactFlow).
+    """
+    page.wait_for_function(
+        "() => document.querySelectorAll('.react-flow__node').length > 0",
+        timeout=timeout_ms,
+    )
+
+    page.evaluate(
+        """(padding) => {
+            const rf = window.__curio_reactFlow;
+            if (rf && typeof rf.fitView === 'function') {
+                //rf.setViewport({ x: 0, y: 0, zoom: 0.35 }, { duration: 0 })
+                rf.fitView({ padding, duration: 0, includeHiddenNodes: true });
+            }
+        }""",
+        padding,
+    )
+
+    page.wait_for_function(
+        """(stable_frames) => {
+            const vp = document.querySelector('.react-flow__viewport');
+            if (!vp) return false;
+            const current = vp.style.transform || '';
+            if (!current) return false;
+            window.__curio_vp_samples = window.__curio_vp_samples || [];
+            const samples = window.__curio_vp_samples;
+            samples.push(current);
+            if (samples.length > stable_frames) samples.shift();
+            if (samples.length < stable_frames) return false;
+            return samples.every((s) => s === samples[0]);
+        }""",
+        arg=stable_frames,
+        timeout=timeout_ms,
+    )
+
+    page.evaluate("delete window.__curio_vp_samples")
 
 
 def _capture_full_page(page: Page):
@@ -413,6 +737,11 @@ def save_workflow_test_screenshot(
     os.makedirs(WORKFLOW_SCREENSHOT_EXPECTED_DIR, exist_ok=True)
     filename = f"screenshot_{stem}_{test_name}.png"
     expected_path = os.path.join(WORKFLOW_SCREENSHOT_EXPECTED_DIR, filename)
+
+    # Pin the ReactFlow viewport to a deterministic fitView before any
+    # capture, so baselines and subsequent comparisons share the same
+    # zoom/pan regardless of when the in-app setTimeout(fitView) fires.
+    _wait_for_reactflow_ready(page)
 
     if not os.path.isfile(expected_path):
         _capture_full_page(page).save(expected_path)
@@ -570,14 +899,207 @@ def base_url(servers: dict, port_key: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Reusable auth + canvas-entry helpers
+#
+# Every workflow/project E2E test needs the same bootstrap: sign up a fresh
+# user, land on /projects, then open a new empty workflow canvas. These
+# helpers centralise that choreography so individual tests (and the class
+# scoped ``loaded_workflow`` fixture) stay focused on their actual assertions.
+# ---------------------------------------------------------------------------
+
+DEFAULT_TEST_PASSWORD = "testpass123"
+
+
+def signup_e2e_user(
+    page,
+    base_url: str,
+    *,
+    name: str,
+    username: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+) -> None:
+    """Sign up a fresh user via the ``/auth/signup`` form.
+
+    Waits until the sign-up flow has redirected to ``/projects`` so callers
+    can immediately interact with the authenticated UI.
+    """
+    require_user_auth()
+    page.goto(f"{base_url}/auth/signup")
+    page.wait_for_load_state("domcontentloaded")
+    page.get_by_text("Create an account").wait_for(timeout=30000)
+    page.get_by_label("Name", exact=True).fill(name)
+    page.get_by_label("Username").fill(username)
+    page.get_by_label("Password", exact=True).fill(password)
+    page.get_by_label("Confirm Password").fill(password)
+    page.get_by_role("button", name="Create Account").click()
+    page.wait_for_url("**/projects", timeout=30000)
+
+
+def open_new_workflow(page) -> None:
+    """From ``/projects``, click "+ New Dataflow" and wait for the canvas."""
+    page.get_by_text("+ New Dataflow").click()
+    page.wait_for_url("**/dataflow/**", timeout=15000)
+    page.wait_for_load_state("domcontentloaded")
+
+
+def signup_and_enter_new_workflow(
+    page,
+    base_url: str,
+    *,
+    name: str,
+    username: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+) -> None:
+    """Sign up a user and navigate to a fresh empty dataflow canvas."""
+    signup_e2e_user(
+        page, base_url, name=name, username=username, password=password,
+    )
+    open_new_workflow(page)
+
+
+# ---------------------------------------------------------------------------
+# DB stubs for Playwright — the browser does not drive the signup form.
+#
+# ``/api/testing/stub-login`` creates or fetches a user and returns a fresh
+# session token, which we install as the ``session_token`` cookie on the
+# Playwright context. ``/api/testing/stub-project`` seeds a workflow row
+# owned by that user so ``/projects`` has something to render. Both endpoints
+# require ``CURIO_TESTING=1``; see ``backend/app/testing/routes.py``.
+# ---------------------------------------------------------------------------
+
+SESSION_COOKIE_NAME = "session_token"
+
+
+def _post_json(url: str, payload: dict, timeout: float = 10.0) -> dict:
+    """POST *payload* as JSON to *url* and return the parsed JSON body.
+
+    Uses ``urllib`` (stdlib only) to match the rest of this module instead
+    of introducing a ``requests`` dependency.
+    """
+    data = json.dumps(payload).encode("utf-8")
+    req = Request(
+        url,
+        data=data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urlopen(req, timeout=timeout) as resp:  # noqa: S310 (trusted local URL)
+        body = resp.read().decode("utf-8") or "{}"
+        return json.loads(body)
+
+
+def install_session_cookie(page, frontend_url: str, token: str) -> None:
+    """Install *token* as the ``session_token`` cookie on *page*'s context.
+
+    Mirrors what ``setToken`` does in ``utils/authApi.ts`` (``js-cookie``
+    defaults: path=/``, host-only, no ``Secure`` on http). Playwright derives
+    the domain from ``url`` when neither ``domain`` nor ``path`` is set, so
+    the SPA's ``Cookies.get("session_token")`` finds the same value.
+    """
+    page.context.add_cookies(
+        [
+            {
+                "name": SESSION_COOKIE_NAME,
+                "value": token,
+                "url": frontend_url,
+            }
+        ]
+    )
+
+
+def stub_db_login(
+    page,
+    frontend_url: str,
+    backend_url: str,
+    *,
+    username: str,
+    name: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+    email: str | None = None,
+    project_name: str | None = None,
+    project_spec: dict | None = None,
+) -> dict:
+    """DB stub helper for Curio E2E tests.
+
+    Creates (or re-uses) *username* directly via ``/api/testing/stub-login``,
+    installs the returned session token as the browser cookie, and — when
+    ``project_name`` is provided — seeds a workflow row owned by that user
+    via ``/api/testing/stub-project`` so the ``/projects`` list page has
+    content to render.
+
+    Returns the parsed ``stub-login`` JSON (``{user, token, created}``),
+    augmented with ``project`` when one was stubbed.
+    """
+    payload = {"username": username, "name": name, "password": password}
+    if email is not None:
+        payload["email"] = email
+    login = _post_json(f"{backend_url}/api/testing/stub-login", payload)
+    install_session_cookie(page, frontend_url, login["token"])
+
+    if project_name is not None:
+        project_payload: dict = {"username": username, "name": project_name}
+        if project_spec is not None:
+            project_payload["spec"] = project_spec
+        project = _post_json(
+            f"{backend_url}/api/testing/stub-project", project_payload,
+        )
+        login["project"] = project
+    return login
+
+
+def stub_login_and_enter_workflow(
+    page,
+    frontend_url: str,
+    backend_url: str,
+    *,
+    username: str,
+    name: str,
+    password: str = DEFAULT_TEST_PASSWORD,
+    project_name: str = "StubbedDataflow",
+    project_spec: dict | None = None,
+) -> dict:
+    """DB-stubbed fast-path into an empty dataflow canvas.
+
+    Creates the user + an empty project directly via
+    ``/api/testing/stub-login`` and ``/api/testing/stub-project``, installs
+    the session cookie on the Playwright context, and navigates straight to
+    ``/dataflow/<project_id>`` — **no UI interaction**. Returns the full
+    ``stub_db_login`` payload (``{user, token, created, project}``).
+
+    This skips both the signup form and the "+ New Dataflow" click on
+    ``/projects`` so the class-scoped ``loaded_workflow`` fixture spends its
+    warm-up time on the actual workflow upload instead of UI plumbing.
+    """
+    result = stub_db_login(
+        page,
+        frontend_url=frontend_url,
+        backend_url=backend_url,
+        username=username,
+        name=name,
+        password=password,
+        project_name=project_name,
+        project_spec=project_spec,
+    )
+    project_id = result["project"]["id"]
+    page.goto(f"{frontend_url}/dataflow/{project_id}")
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_url(f"**/dataflow/{project_id}", timeout=15000)
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Reusable upload helper
 # ---------------------------------------------------------------------------
 
 def upload_workflow(
     page, app_frontend, workflow_file: str, expected_node_count: int
 ):
-    """Navigate to the app, open the File menu, upload a workflow JSON,
-    and wait until the expected number of nodes appear on the canvas."""
+    """Open the File menu on the current workflow canvas, upload a workflow
+    JSON and wait until the expected number of nodes render.
+
+    The caller is expected to have already navigated ``page`` to a
+    ``/dataflow/...`` route (e.g. via ``signup_and_enter_new_workflow``).
+    """
     debug_log(
         "fixtures.py:upload_workflow",
         "upload_workflow called",
@@ -591,30 +1113,35 @@ def upload_workflow(
         },
         "H1,H2,H3",
     )
-    app_frontend.goto_page("/")
     page.wait_for_load_state("domcontentloaded")
 
-    # Open the File dropdown in the menu bar
+    plug = page.locator("#plug-loader")
+    try:
+        plug.wait_for(state="attached", timeout=60000)
+        plug.wait_for(state="detached", timeout=120000)
+    except PlaywrightError:
+        pass
+
     file_menu_btn = page.get_by_role("button", name=re.compile("File"))
-    file_menu_btn.wait_for(state="visible", timeout=15000)
+    file_menu_btn.wait_for(state="visible", timeout=60000)
     file_menu_btn.scroll_into_view_if_needed()
     # force=True so the click isn't captured by the ReactFlow canvas layer
     file_menu_btn.click(force=True)
 
-    # Click "Load specification" and upload the JSON file
-    load_spec = page.get_by_role("button", name="Load specification")
-    load_spec.wait_for(state="visible", timeout=5000)
+    # Click "Import specification" and upload the JSON file
+    load_spec = page.get_by_role("button", name="Import specification")
+    load_spec.wait_for(state="visible", timeout=15000)
     assert load_spec.is_visible()
 
     with page.expect_file_chooser() as fc_info:
-        page.get_by_text("Load specification").click()
+        page.get_by_text("Import specification").click()
     fc_info.value.set_files(workflow_file)
 
     # Wait until all expected nodes have rendered on the ReactFlow canvas
     page.wait_for_function(
         f"document.querySelectorAll('.react-flow__node').length >= "
         f"{expected_node_count}",
-        timeout=15000,
+        timeout=60000,
     )
     # hide the tools menu bar so it doesn't interfere with the test
     # get parent of #step-loading
@@ -649,8 +1176,16 @@ class FrontendPage(Page):
             "H1,H2,H3",
         )
         self.frontend_server = frontend_server
+        self.base_url = frontend_server
         self.page = page
         self.browser_context = page.context
+
+    def __getattribute__(self, item):
+        try:
+            return object.__getattribute__(self, item)
+        except AttributeError:
+            page = object.__getattribute__(self, "page")
+            return object.__getattribute__(page, item)
 
     def set_language(self, language="en-US"):
         self.browser_context.set_extra_http_headers(
@@ -701,4 +1236,3 @@ class FrontendPage(Page):
 
     def expect_page_title(self, search_title: str):
         expect(self.page).to_have_title(re.compile(search_title))
-

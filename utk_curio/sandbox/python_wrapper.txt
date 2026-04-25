@@ -31,31 +31,73 @@ if(dataType == 'outputs'):
     input = []
     file_path = eval(file_path)
     for elem in file_path:
-        input.append(load_memory_mapped_file(elem['path']))
+        #input.append(load_memory_mapped_file(elem['path']))
+        input.append(load_from_duckdb(elem['path']))
 elif(file_path):
-    input = load_memory_mapped_file(file_path)
+    #input = load_memory_mapped_file(file_path)
+    input = load_from_duckdb(file_path)
+
+# Serialization input dispatch:
+# incomingInput = None
+# 
+# if input:
+#     checkIOType(input, nodeType)
+#     if(dataType == 'outputs'):
+#         incomingInput = []
+#         for elem in input:
+#             incomingInput.append(parseInput(elem))
+#     else:
+#         incomingInput = parseInput(input)
+# else:
+#     incomingInput = ''
+
+#duckdb input dispatch block:
+#incomingInput = ''
+#if input != '':
 
 incomingInput = None
-
-if input:
-    checkIOType(input, nodeType)
-    if(dataType == 'outputs'):
-        incomingInput = []
-        for elem in input:
-            incomingInput.append(parseInput(elem))
+if input is not None and not (isinstance(input, str) and input == ''):
+    if dataType == 'outputs':
+        synthetic = {
+            'dataType': 'outputs',
+            'data': [{'dataType': detect_kind(v), 'data': None} for v in input],
+        }
+        checkIOType(synthetic, nodeType)
+        incomingInput = input #list of raw objects
     else:
-        incomingInput = parseInput(input)
-else:
-    incomingInput = ''
+        synthetic = {'dataType': detect_kind(input), 'data': None} 
+        checkIOType(synthetic, nodeType)
+        incomingInput = input
 
+# Serialization output dispatch
+# output = userCode(incomingInput)
+# parsedOutput = parseOutput(output)
+# checkIOType(parsedOutput, nodeType, False)
+
+#duckdb output dispatch:
 output = userCode(incomingInput)
-parsedOutput = parseOutput(output)
-checkIOType(parsedOutput, nodeType, False)
+out_kind = detect_kind(output)
+if out_kind == 'outputs':
+    synthetic_out = {
+        'dataType': 'outputs',
+        'data': [{'dataType': detect_kind(v), 'data': None} for v in output]
+    }
+else:
+    synthetic_out = {'dataType': out_kind, 'data': None}
+#checkIOType is not inert. It halts the pipeline when a node produces the wrong kind of thing. it's a gate, not a modifier. 
+checkIOType(synthetic_out, nodeType, False)
 
 # print(parsedOutput)
 # print(type(parsedOutput['data'][0]))
 # print(parsedOutput)
-file_path = save_memory_mapped_file(parsedOutput)
+
+# serialization output saving
+# file_path = save_memory_mapped_file(parsedOutput)
 # print(json.dumps(parsedOutput)) # stdout: 0,-2; node output: -2
-print(json.dumps({'path': file_path, 'dataType': parsedOutput['dataType']})) # path: -1
+# print(json.dumps({'path': file_path, 'dataType': parsedOutput['dataType']})) # path: -1
 # print(json.dumps(parsedOutput))
+
+
+# duckdb output saving
+file_path = save_to_duckdb(output, node_id=nodeType)
+print(json.dumps({'path': file_path, 'dataType': out_kind})) # path: -1

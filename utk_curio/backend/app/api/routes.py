@@ -5,7 +5,11 @@ import sqlite3
 from utk_curio.backend.extensions import db
 from utk_curio.backend.app.users.models import User, UserSession
 from utk_curio.backend.app.services.google_oauth import GoogleOAuth
-from utk_curio.backend.app.middlewares import require_auth
+from utk_curio.backend.app.users.dependencies import require_auth
+from utk_curio.backend.app.common.safe_paths import (
+    PathTraversalError,
+    safe_join,
+)
 import uuid
 import os
 import zlib
@@ -19,6 +23,9 @@ from openai import OpenAI
 
 # The Flask app
 from utk_curio.backend.app.api import bp
+
+#DuckDB parsers
+from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
 
 # Sandbox address
 api_address='http://'+os.getenv('FLASK_SANDBOX_HOST', 'localhost')
@@ -93,6 +100,13 @@ def get_template_folders() -> list:
 
 def get_db_path():
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+    # CURIO_TESTING=1 pins provenance to a dedicated test DB under
+    # .curio/test/ so pytest / Playwright never mutate the dev provenance
+    # database. Mirrors the DATABASE_URL_TEST split in backend/config.py.
+    if os.environ.get("CURIO_TESTING", "").lower() in ("1", "true", "yes"):
+        test_dir = os.path.join(launch_dir, ".curio", "test")
+        os.makedirs(test_dir, exist_ok=True)
+        return os.path.join(test_dir, "provenance.db")
     db_path = os.path.join(launch_dir, ".curio", "provenance.db")
     return db_path
 
@@ -261,6 +275,29 @@ def transform_to_vega(data):
 
     return data
 
+#DuckDB get file
+@bp.route('/get', methods=['GET'])
+def get_file():
+    file_name = request.args.get('fileName')
+    vega = request.args.get('vega', 'false').lower() == 'true'
+
+    if not file_name:
+        return 'No artifact id specified', 400
+
+    try:
+        t0 = time.perf_counter()
+        raw = load_from_duckdb(file_name)
+        data = parseOutput(raw)
+        data['filename'] = file_name 
+        if vega:
+            data = transform_to_vega(data)
+        print(f"[/get] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
+        return jsonify(data), 200
+    except Exception as e:
+        return f'Error loading artifact: {str(e)}', 500
+
+#Serialization get file
+'''
 @bp.route('/get', methods=['GET'])
 def get_file():
     file_name = request.args.get('fileName')
@@ -271,14 +308,12 @@ def get_file():
     
     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
     shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
-    base_path = Path(launch_dir) / shared_disk_path
-    base_path = base_path.resolve()
+    base_path = (Path(launch_dir) / shared_disk_path).resolve()
 
-    requested_path = Path(file_name)
-    full_path = (base_path / requested_path).resolve()
-
-    if not str(full_path).startswith(str(base_path)):
-        return 'Invalid file path: %s'%full_path, 403
+    try:
+        full_path = safe_join(base_path, file_name, validate=False, field="fileName")
+    except PathTraversalError as exc:
+        return f'Invalid file path: {exc}', 403
 
     if not full_path.exists():
         return 'File does not exist: %s'%full_path, 404
@@ -301,50 +336,91 @@ def get_file():
 
     except Exception as e:
         return f'Error loading file: {str(e)}', 500
+'''
 
+#DuckDB get file preview
 @bp.route('/get-preview', methods=['GET'])
 def get_file_preview():
     """
-    Get first 100 rows + metadata for DataPool display optimization.
-    Similar to /get but returns limited data to reduce transfer overhead.
+    Get first N rows + metadata for DataPool display optimization.
+    Similar to /get but truncates the DataFrame/GeoDataFrame before
+    converting to JSON, so large artifacts stay cheap to preview.
     """
     file_name = request.args.get('fileName')
-    
+
     if not file_name:
-        return 'No file name specified', 400
-    
-    launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
-    shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
-    base_path = Path(launch_dir) / shared_disk_path
-    base_path = base_path.resolve()
+        return 'No artifact id specified', 400
 
-    requested_path = Path(file_name)
-    full_path = (base_path / requested_path).resolve()
-
-    if not str(full_path).startswith(str(base_path)):
-        return 'Invalid file path: %s'%full_path, 403
-
-    if not full_path.exists():
-        return 'File does not exist: %s'%full_path, 404
+    max_rows = 100
 
     try:
-        # Using mmap for efficient memory-mapped loading
-        with open(full_path, "rb") as file:
-            with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
-                # Decompress and decode directly from the memory-mapped file
-                decompressed_data = zlib.decompress(mmapped_file[:])
-                data = json.loads(decompressed_data.decode('utf-8'))
+        t0 = time.perf_counter()
+        raw = load_from_duckdb(file_name)
 
-                if isinstance(data, str):
-                    data = json.loads(data)
-                
-                # Create preview version with limited rows
-                preview_data = create_preview_data(data)
-                
-                return jsonify(preview_data)
+        total_rows = None
+        # gpd.GeoDataFrame is a subclass of pd.DataFrame, so this catches both
+        if isinstance(raw, pd.DataFrame):
+            total_rows = len(raw)
+            raw = raw.head(max_rows)
+
+        data = parseOutput(raw)
+        data['filename'] = file_name 
+
+        if total_rows is not None:
+            data['preview'] = True
+            data['previewRows'] = min(max_rows, total_rows)
+            data['totalRows'] = total_rows
+
+        print(f"[/get-preview] id={file_name} took={time.perf_counter()-t0:.4f}s", flush=True)
+        return jsonify(data), 200
 
     except Exception as e:
         return f'Error loading preview: {str(e)}', 500
+
+#Serialization get file preview
+# @bp.route('/get-preview', methods=['GET'])
+# def get_file_preview():
+#     """
+#     Get first 100 rows + metadata for DataPool display optimization.
+#     Similar to /get but returns limited data to reduce transfer overhead.
+#     """
+#     file_name = request.args.get('fileName')
+    
+#     if not file_name:
+#         return 'No file name specified', 400
+    
+#     launch_dir = os.environ.get("CURIO_LAUNCH_CWD", os.getcwd())
+#     shared_disk_path = os.environ.get("CURIO_SHARED_DATA", "./.curio/data/")
+#     base_path = Path(launch_dir) / shared_disk_path
+#     base_path = base_path.resolve()
+
+#     requested_path = Path(file_name)
+#     full_path = (base_path / requested_path).resolve()
+
+#     if not str(full_path).startswith(str(base_path)):
+#         return 'Invalid file path: %s'%full_path, 403
+
+#     if not full_path.exists():
+#         return 'File does not exist: %s'%full_path, 404
+
+#     try:
+#         # Using mmap for efficient memory-mapped loading
+#         with open(full_path, "rb") as file:
+#             with mmap.mmap(file.fileno(), 0, access=mmap.ACCESS_READ) as mmapped_file:
+#                 # Decompress and decode directly from the memory-mapped file
+#                 decompressed_data = zlib.decompress(mmapped_file[:])
+#                 data = json.loads(decompressed_data.decode('utf-8'))
+
+#                 if isinstance(data, str):
+#                     data = json.loads(data)
+                
+#                 # Create preview version with limited rows
+#                 preview_data = create_preview_data(data)
+                
+#                 return jsonify(preview_data)
+
+#     except Exception as e:
+#         return f'Error loading preview: {str(e)}', 500
 
 def create_preview_data(data, max_rows=100):
     """
@@ -467,10 +543,22 @@ def process_python_code():
                                 )
         
         try:
-            response = response.json()
-            stdout = response['stdout']
-            stderr = response['stderr']
-            output = response['output'] # contains path and dataType
+            try:
+                response_json = response.json()
+            except Exception as e:
+                print(f"[processPythonCode] sandbox /exec returned non-JSON: "
+                  f"status={response.status_code} "
+                  f"body={response.text[:500]!r}", flush=True)
+                return {
+                    'stdout': '',
+                    'stderr': f'Sandbox error: {e}',
+                    'input': input,
+                    'output': {}
+                }, 500
+
+            stdout = response_json['stdout']
+            stderr = response_json['stderr']
+            output = response_json['output'] # contains path and dataType
             print(output, flush=True)
             
             return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
@@ -567,118 +655,22 @@ def toLayers():
 #     }), 200
 
 @bp.route('/signin', methods=['POST'])
-def signin():
-    try:
-        google_oauth = GoogleOAuth()
-        user_data = google_oauth.verify_token(request.json.get('token'))
-
-        if not user_data:
-            return jsonify({'error': 'Invalid token'}), 400
-
-        user = User.query.filter_by(provider_uid=user_data['uid']).first()
-
-        if not user:
-            user = User(
-                email=user_data['email'],
-                name=user_data['name'],
-                profile_image=user_data['picture'],
-                type='programmer',  
-                provider='google',
-                provider_uid=user_data['uid']
-            )
-            db.session.add(user)
-            db.session.commit()
-
-        new_session = UserSession(user_id=user.id)
-        db.session.add(new_session)
-        db.session.commit()
-
-        return jsonify({
-            'user': {
-                'name': user.name,
-                'email': user.email,
-                'profile_image': user.profile_image,
-                'type': user.type,
-                'uid': user.provider_uid,
-                'provider': user.provider
-            },
-            'token': new_session.token
-        }), 200
-    
-    except:
-        # create new session token
-        user_data = {
-            'id': 1,
-            'name': 'Test',
-            'email': 'Test@mail.com',
-            'provider': "",
-            'uid': "",
-            'picture': "",
-            'type': 'programmer'
-        }
-        new_session = UserSession(user_id=user_data.get('id'))
-        db.session.add(new_session)
-        db.session.commit()
-
-
-        # get user from database
-
-        user = User.query.filter_by(
-            id=user_data.get('id'),
-            # provider=user_data.get('provider'),
-            # provider_uid= user_data.get('uid')
-        ).first()
-
-        if user:
-            user.name = user_data.get('name')
-            user.profile_image = user_data.get('picture')
-        else:
-            user = User(
-                email=user_data.get('email'),
-                name=user_data.get('name'),
-                profile_image=user_data.get('picture'),
-                provider=user_data.get('provider'),
-                provider_uid=user_data.get('uid'))
-            db.session.add(user)
-        db.session.commit()
-
-
-        return jsonify({
-            'user': {
-                'name': user.name,
-                'profile_image': user.profile_image,
-                'type': user.type
-            },
-            'token': new_session.token
-        }), 200
+def signin_legacy():
+    """Deprecated shim — redirects to /api/auth/signin/google."""
+    from flask import redirect
+    return redirect('/api/auth/signin/google', code=308)
 
 @bp.route('/getUser', methods=['GET'])
-@require_auth
-def get_user():
-    user = g.user
-    return jsonify({
-        'user': {
-            'name': user.name,
-            'profile_image': user.profile_image,
-            'type': user.type
-        }
-    }), 200
+def get_user_legacy():
+    """Deprecated shim — redirects to /api/auth/me."""
+    from flask import redirect
+    return redirect('/api/auth/me', code=308)
 
 @bp.route('/saveUserType', methods=['POST'])
-@require_auth
-def save_user_type():
-    new_type = request.json.get('type')
-    user = g.user
-    user.type = new_type
-    db.session.commit()
-
-    return jsonify({
-        'user': {
-            'name': user.name,
-            'profile_image': user.profile_image,
-            'type': user.type
-        }
-    }), 200
+def save_user_type_legacy():
+    """Deprecated shim — redirects to /api/auth/me (PATCH)."""
+    from flask import redirect
+    return redirect('/api/auth/me', code=308)
 
 @bp.route('/saveUserProv', methods=['POST'])
 def save_user_prov(): # only save if user with that name does not exist on the database
@@ -705,42 +697,105 @@ def save_user_prov(): # only save if user with that name does not exist on the d
 
     return "",200
 
+def _ensure_workflow_user_id_column(conn):
+    """Add user_id column to workflow table if it doesn't exist yet."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(workflow)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "user_id" not in cols:
+        cursor.execute("ALTER TABLE workflow ADD COLUMN user_id integer")
+        conn.commit()
+
+
+def _ensure_wfexec_project_id_column(conn):
+    """Add project_id column to workflowExecution if it doesn't exist."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(workflowExecution)")
+    cols = [row[1] for row in cursor.fetchall()]
+    if "project_id" not in cols:
+        cursor.execute("ALTER TABLE workflowExecution ADD COLUMN project_id text")
+        conn.commit()
+
 @bp.route('/saveWorkflowProv', methods=['POST'])
 def save_workflow_prov():
 
-    # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
+    _ensure_workflow_user_id_column(conn)
     cursor = conn.cursor()
 
     workflow_name = request.json.get('workflow')
 
-    # starting a new version counter for the workflow
+    from utk_curio.backend.app.users.dependencies import get_current_user
+    current_user = get_current_user()
+    user_id = current_user.id if current_user else None
+
     cursor.execute('''INSERT INTO version (version_number)
                     VALUES (?)''', ('1.0',))
 
     conn.commit()
 
-    # id of the new just added version element
     version_id = cursor.lastrowid
 
-    # creating new versioned element for the new workflow
     cursor.execute('''INSERT INTO versionedElement (version_id)
                     VALUES (?)''', (version_id,))
 
     conn.commit()
 
-    # id of the new just added versioned element
     ve_id = cursor.lastrowid
 
-    # creating new workflow
-    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id)
-                    VALUES (?, ?)''', (workflow_name, ve_id,))
+    cursor.execute('''INSERT INTO workflow (workflow_name, ve_id, user_id)
+                    VALUES (?, ?, ?)''', (workflow_name, ve_id, user_id))
 
     conn.commit()
     conn.close()
 
     return "",200
+
+@bp.route('/api/workflows', methods=['GET'])
+@require_auth
+def list_workflows():
+    """List workflows for the current user (scope=mine)."""
+    scope = request.args.get('scope', 'mine')
+    db_path = get_db_path()
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    _ensure_workflow_user_id_column(conn)
+    cursor = conn.cursor()
+
+    if scope == 'mine':
+        cursor.execute(
+            """
+            SELECT DISTINCT workflow_name, MAX(workflow_id) as workflow_id, user_id
+            FROM workflow
+            WHERE user_id = ?
+            GROUP BY workflow_name
+            ORDER BY workflow_id DESC
+            """,
+            (g.user.id,),
+        )
+    else:
+        cursor.execute(
+            """
+            SELECT DISTINCT workflow_name, MAX(workflow_id) as workflow_id, user_id
+            FROM workflow
+            GROUP BY workflow_name
+            ORDER BY workflow_id DESC
+            """
+        )
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    workflows = [
+        {
+            "workflow_name": row["workflow_name"],
+            "workflow_id": row["workflow_id"],
+            "user_id": row["user_id"],
+        }
+        for row in rows
+    ]
+    return jsonify(workflows), 200
 
 @bp.route('/newNodeProv', methods=['POST'])
 def new_node_prov():
@@ -1088,10 +1143,12 @@ def check_db():
 @bp.route('/nodeExecProv', methods=['POST'])
 def node_exec_prov():
     data = request.json.get('data')
+    project_id = data.get('project_id') if data else None
 
     # db_path = os.path.join(os.getcwd(), ".curio", "provenance.db")
     db_path = get_db_path()
     conn = sqlite3.connect(db_path)
+    _ensure_wfexec_project_id_column(conn)
     cursor = conn.cursor()
 
     # new workflow execution
@@ -1135,13 +1192,13 @@ def node_exec_prov():
         int_id = _int_row[0]
 
 
-        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id, int_id)
-                        VALUES (?, ?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0], int_id))
+        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id, int_id, project_id)
+                        VALUES (?, ?, ?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0], int_id, project_id))
 
         conn.commit()
     else:
-        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id)
-                VALUES (?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0],))
+        cursor.execute('''INSERT INTO workflowExecution (workflowexec_start_time, workflowexec_end_time, workflow_id, project_id)
+                VALUES (?, ?, ?, ?)''', (data["activityexec_start_time"], data["activityexec_end_time"], workflow[0], project_id))
 
         conn.commit()
 
@@ -1556,10 +1613,14 @@ def insert_interaction():
 
         # 3. Inserting into the interaction table
 
+        from utk_curio.backend.app.users.dependencies import get_current_user
+        current_user = get_current_user()
+        user_id_val = current_user.id if current_user else None
+
         cursor.execute("""
             INSERT INTO interaction (int_time, user_id, vis_id)
             VALUES (?, ?, ?)
-        """, (data['int_time'], "", vis_id))
+        """, (data['int_time'], user_id_val, vis_id))
         conn.commit()
 
         return {'message': 'Visualization successfully recorded'}, 201

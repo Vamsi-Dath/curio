@@ -2,7 +2,7 @@ import React, { ReactNode, useState, useEffect } from "react";
 import CSS from "csstype";
 import { Dropdown, Spinner } from "react-bootstrap";
 
-import { useNodeActionsContext } from "../providers/FlowProvider";
+import { useFlowContext } from "../providers/FlowProvider";
 import { NodeRemoveChange, useReactFlow } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
@@ -105,6 +105,8 @@ export const NodeContainer = ({
 }) => {
     const { showToast } = useToastContext();
     const {
+        nodes,
+        edges,
         workflowNameRef,
         applyRemoveChanges,
         setPinForDashboard,
@@ -113,8 +115,9 @@ export const NodeContainer = ({
         updateDataNode,
         updateDefaultCode,
         workflowGoal,
-        acceptSuggestion
-    } = useNodeActionsContext();
+        acceptSuggestion,
+        nodeExecStatus,
+    } = useFlowContext();
     const { getNodes, getEdges } = useReactFlow();
     const { getTemplates, deleteTemplate, fetchTemplates } = useTemplateContext();
     const { createCodeNode, loadTrill } = useCode();
@@ -143,6 +146,18 @@ export const NodeContainer = ({
     useEffect(() => {
         setGoal(data.goal);
     }, [data.goal])
+
+    useEffect(() => {
+        if (nodeWidth !== undefined) {
+            setCurrentNodeWidth(nodeWidth);
+        }
+    }, [nodeWidth]);
+
+    useEffect(() => {
+        if (nodeHeight !== undefined) {
+            setCurrentNodeHeight(nodeHeight);
+        }
+    }, [nodeHeight]);
 
     useEffect(() => {
 
@@ -260,6 +275,19 @@ export const NodeContainer = ({
         function stopResize(e: any) {
             window.removeEventListener("mousemove", resize, false);
             window.removeEventListener("mouseup", stopResize, false);
+
+            const newWidth = resizable.offsetWidth;
+            const newHeight = resizable.offsetHeight;
+            if (
+                data.nodeWidth !== newWidth ||
+                data.nodeHeight !== newHeight
+            ) {
+                updateDataNode(nodeId, {
+                    ...data,
+                    nodeWidth: newWidth,
+                    nodeHeight: newHeight,
+                });
+            }
         }
     }, []);
 
@@ -613,6 +641,18 @@ export const NodeContainer = ({
                             minWidth: 0,
                             color: data.keywordHighlighted ? "rgb(251, 252, 246)" : "#888787",
                         }}>
+                            {nodeExecStatus[nodeId] === "executed" ? (
+                                <span
+                                    style={{
+                                        color: "#2F8F4A",
+                                        marginRight: "4px",
+                                        fontSize: "10px",
+                                    }}
+                                    title="Executed"
+                                >
+                                    &#10003;
+                                </span>
+                            ) : null}
                             {nodeNameTranslation(data.nodeType)}
                             {templateData.name != undefined ? " · " + templateData.name : null}
                         </span>
@@ -626,6 +666,12 @@ export const NodeContainer = ({
                                 onClick={() => promptModal()}
                             />
                         ) : null}
+                        <FontAwesomeIcon
+                            icon={faCircleInfo}
+                            style={{ ...headerIconStyle, ...(data.keywordHighlighted ? {color: "rgb(251, 252, 246)"} : {}) }}
+                            title="Details"
+                            onClick={() => promptDescription()}
+                        />
                         <FontAwesomeIcon
                             icon={pinnedToDashboard ? faCircleDot : faCircle}
                             style={{

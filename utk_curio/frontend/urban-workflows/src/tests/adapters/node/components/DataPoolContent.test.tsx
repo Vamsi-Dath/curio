@@ -1,6 +1,7 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import DataPoolContent from '../../../../adapters/node/components/DataPoolContent';
+import { fetchPreviewData } from '../../../../services/api';
 
 jest.mock('../../../../utils/parsing', () => ({
   shortenString: (s: string) => s,
@@ -10,6 +11,8 @@ jest.mock('../../../../services/api', () => ({
   fetchPreviewData: jest.fn().mockRejectedValue(new Error('no preview in tests')),
 }));
 
+const mockFetchPreviewData = fetchPreviewData as jest.MockedFunction<typeof fetchPreviewData>;
+
 describe('DataPoolContent', () => {
   const defaultProps = {
     activeTab: '0',
@@ -18,6 +21,11 @@ describe('DataPoolContent', () => {
     tableData: [{ name: 'Alice' }],
     data: { nodeId: 'test-node', input: '' },
   };
+
+  beforeEach(() => {
+    mockFetchPreviewData.mockReset();
+    mockFetchPreviewData.mockRejectedValue(new Error('no preview in tests'));
+  });
 
   test('renders tab titles based on tabData length', () => {
     render(<DataPoolContent {...defaultProps} />);
@@ -40,5 +48,22 @@ describe('DataPoolContent', () => {
   test('renders with non-array tabData gracefully', () => {
     render(<DataPoolContent {...defaultProps} tabData={null as any} />);
     expect(screen.getByText('No data available.')).toBeInTheDocument();
+  });
+
+  test('keeps the output table when preview resolves with no rows', async () => {
+    mockFetchPreviewData.mockResolvedValue({
+      dataType: 'dataframe',
+      data: { empty: {} },
+    } as any);
+
+    render(
+      <DataPoolContent
+        {...defaultProps}
+        data={{ nodeId: 'test-node', input: { filename: 'artifact_id' } }}
+      />
+    );
+
+    await waitFor(() => expect(mockFetchPreviewData).toHaveBeenCalledWith('artifact_id'));
+    expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
   });
 });

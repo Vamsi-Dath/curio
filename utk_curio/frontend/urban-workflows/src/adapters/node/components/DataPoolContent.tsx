@@ -1,4 +1,4 @@
-import React, { useState, useEffect} from "react";
+import React, { useState, useEffect } from "react";
 import Tabs from 'react-bootstrap/Tabs';
 import Tab from 'react-bootstrap/Tab';
 // mui
@@ -40,12 +40,15 @@ const ContentComponent = ({
   }, [outputTable]);
 
   useEffect(() => {
+      let cancelled = false;
+
       const loadPreviewData = async () => {
           const fileId = data.input && typeof data.input === "object"
               ? (data.input.filename ?? data.input.path)
               : null;
 
           if (!fileId) {
+              setPreviewTable([]);
               setUsePreview(false);
               return;
           }
@@ -54,34 +57,46 @@ const ContentComponent = ({
           try {
               const previewData = await fetchPreviewData(fileId);
 
-              let tableData: any[] = [];
+              let nextPreviewTable: any[] = [];
               if (previewData.dataType === "dataframe" && previewData.data) {
                   const columns = Object.keys(previewData.data);
-                  const indices = Object.keys(previewData.data[columns[0]]);
-                  tableData = indices.map((idx) => {
+                  const firstColumn = columns[0];
+                  const indices = firstColumn ? Object.keys(previewData.data[firstColumn] ?? {}) : [];
+                  nextPreviewTable = indices.map((idx) => {
                       const row: any = {};
                       columns.forEach((col) => { row[col] = previewData.data[col][idx]; });
                       return row;
                   });
               } else if (previewData.dataType === "geodataframe" && previewData.data?.features) {
-                  tableData = previewData.data.features.map((feature: any) => ({ ...feature.properties }));
+                  nextPreviewTable = previewData.data.features.map((feature: any) => ({ ...feature.properties }));
               }
 
-              setPreviewTable(tableData);
-              setUsePreview(true);
+              if (cancelled) return;
+
+              setPreviewTable(nextPreviewTable);
+              // Keep the already-rendered output table when preview returns
+              // no rows or resolves after the input has moved on.
+              setUsePreview(nextPreviewTable.length > 0);
           } catch (error) {
+              if (cancelled) return;
               console.log("[ContentComponent] Preview fetch failed, falling back to outputTable:", error);
               setUsePreview(false);
           } finally {
-              setIsLoadingPreview(false);
+              if (!cancelled) {
+                  setIsLoadingPreview(false);
+              }
           }
       };
 
       loadPreviewData();
+
+      return () => {
+          cancelled = true;
+      };
   }, [data.input]);
 
   // Use preview data if available, otherwise fall back to outputTable
-  const displayTable = usePreview ? previewTable : outputTable;
+  const displayTable = usePreview && previewTable.length > 0 ? previewTable : outputTable;
 
   return (
       <div

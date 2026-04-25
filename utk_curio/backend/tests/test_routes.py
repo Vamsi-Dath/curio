@@ -39,9 +39,9 @@ def test_app_routes(app):
         "api.node_exec_prov",
         "api.get_node_graph",
         "api.truncate_db_prov",
-        "api.signin",
-        "api.get_user",
-        "api.save_user_type",
+        "api.signin_legacy",
+        "api.get_user_legacy",
+        "api.save_user_type_legacy",
         "api.save_user_prov",
     ]
 

@@ -14,7 +14,7 @@ def initialize_db(db_path="provenance.db"):
         "CREATE TABLE IF NOT EXISTS versionTransaction (transaction_id integer primary key, transaction_date date, user_id integer, CONSTRAINT fk_trans_user FOREIGN KEY (user_id) REFERENCES user(user_id));",
         "CREATE TABLE IF NOT EXISTS version (version_id integer primary key, version_number varchar(10), transaction_id integer, CONSTRAINT fk_ver_trans FOREIGN KEY (transaction_id) REFERENCES versionTransaction(transaction_id));",
         "CREATE TABLE IF NOT EXISTS versionedElement (ve_id integer primary key, version_id integer, previous_ve_id integer, CONSTRAINT fk_ve_prevve FOREIGN KEY (previous_ve_id) REFERENCES versionedElement(ve_id), CONSTRAINT fk_ve_version FOREIGN KEY (version_id) REFERENCES version(version_id));",
-        "CREATE TABLE IF NOT EXISTS workflow (workflow_id integer primary key, workflow_name varchar(20), ve_id integer, CONSTRAINT fk_wf_ve FOREIGN KEY (ve_id) REFERENCES versionedElement(ve_id));",
+        "CREATE TABLE IF NOT EXISTS workflow (workflow_id integer primary key, workflow_name varchar(20), ve_id integer, user_id integer, CONSTRAINT fk_wf_ve FOREIGN KEY (ve_id) REFERENCES versionedElement(ve_id));",
         "CREATE TABLE IF NOT EXISTS attribute (attribute_id integer primary key, attribute_name varchar(200), attribute_type varchar(20));",  
         "CREATE TABLE IF NOT EXISTS relation (relation_id integer primary key, relation_name varchar(200));",
         "CREATE TABLE IF NOT EXISTS attributeRelation (ar_id integer PRIMARY KEY, attribute_id integer, relation_id integer, CONSTRAINT fk_ar_att FOREIGN KEY (attribute_id) REFERENCES attribute(attribute_id), CONSTRAINT fk_ar_rel FOREIGN KEY (relation_id) REFERENCES relation(relation_id));",

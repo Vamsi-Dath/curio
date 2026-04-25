@@ -12,6 +12,10 @@ module.exports = {
   output: {
     filename: "bundle.js",
     path: path.resolve(__dirname, "dist"),
+    publicPath: "/",
+  },
+  devServer: {
+    historyApiFallback: true,
   },
   resolve: {
     extensions: [".tsx", ".ts", ".js"],
@@ -73,6 +77,7 @@ module.exports = {
     }),
     new Dotenv({
       path: ".env",
+      systemvars: true,
     }),
   ],
 };

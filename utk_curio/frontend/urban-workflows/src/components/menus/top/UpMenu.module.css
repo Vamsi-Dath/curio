@@ -7,6 +7,7 @@
   margin-left: 15px;
   max-height: 100%;
   width: auto;
+  cursor: pointer;
   /* filter: brightness(0) invert(1); */
 }
 
@@ -18,7 +19,7 @@
   align-items: center;
   background-color: #1E1F23;
   height: 65px;
-  padding: 10px;
+  padding: 10px 20px 10px 10px;
   font-family: Rubik;
   z-index: 100;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -79,6 +80,16 @@
   background-color: rgb(251, 170, 105);
 }
 
+.dropDownRowActive {
+  background-color: #2B2C31;
+}
+
+.dropDownDivider {
+  height: 1px;
+  background-color: #2F3036;
+  margin: 0;
+}
+
 .dropDownIcon {
   color: white;
 }
@@ -109,6 +120,27 @@
   border: 1px solid #ccc;
   border-radius: 4px;
   padding: 5px;
+}
+
+.subMenu {
+  background-color: #2A2B30;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.subMenuItem {
+  padding: 6px 16px;
+  color: white;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subMenuItem:hover {
+  background-color: rgb(251, 170, 105);
 }
 
 .dropdownWrapper {

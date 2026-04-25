@@ -10,8 +10,8 @@ export interface NodeOutput {
 }
 
 export function useNodeState(data: any, nodeType: NodeType) {
-  const [output, setOutput] = useState<NodeOutput>({ code: '', content: '', outputType: '' });
-  const [code, setCode] = useState<string>('');
+  const [output, setOutput] = useState<NodeOutput>(data.output ?? { code: '', content: '', outputType: '' });
+  const [code, setCode] = useState<string>(data.code ?? '');
   const [sendCode, setSendCode] = useState<any>();
   const [templateData, setTemplateData] = useState<Template | any>({});
   const [newTemplateFlag, setNewTemplateFlag] = useState(false);
