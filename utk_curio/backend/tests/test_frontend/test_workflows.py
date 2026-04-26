@@ -713,7 +713,7 @@ class TestWorkflowCanvas:
 
     def test_provenance_graph(self, loaded_workflow, request):
         """After executing every playable node, each node that exposes a
-        provenance tab must render a WebGL canvas with content."""
+        provenance tab must render at least one React Flow node card."""
         if not self.__class__._node_execution_success_by_spec.get(
             self.spec.filepath
         ):
@@ -734,7 +734,7 @@ class TestWorkflowCanvas:
             # Check provenance graph is rendered correctly
             # ---------------------------------------------------------------
 
-            # If the node has a provenance tab, 
+            # If the node has a provenance tab,
             # check if the provenance graph is rendered correctly
             provenance_tab = node_el.locator(
                 '.nav-link[data-rr-ui-event-key="provenance"]'
@@ -744,27 +744,12 @@ class TestWorkflowCanvas:
             provenance_tab.first.wait_for(state="visible", timeout=10000)
             provenance_tab.click(force=True)
 
-            # Canvas is inside the provenance tab pane (active after click)
-            # The provenance pane contains a reagraph canvas element (GraphCanvas)
+            # The provenance pane contains a React Flow graph (SVG-based).
+            # Wait for at least one node card to appear inside the inner RF canvas.
             provenance_pane = node_el.locator(".tab-pane.active.show")
-            canvas = provenance_pane.locator("canvas")
-            canvas.first.wait_for(state="visible", timeout=10000)
-            assert canvas.count() >= 1, (
-                f"Node {node.id} ({node.type}) is missing its canvas"
-            )
-
-            # The provenance graph uses reagraph (WebGL/Three.js), not 2D canvas.
-            has_content = canvas.first.evaluate("""
-                (canvas) => {
-                    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-                    if (!gl) return false;
-                    const w = canvas.width, h = canvas.height;
-                    if (w < 2 || h < 2) return false;
-                    return true;
-                }
-            """)
-            assert has_content, (
-                f"Node {node.id} ({node.type}) provenance canvas appears empty "
-                f"(no drawn content detected)"
+            prov_node = provenance_pane.locator(".react-flow__node")
+            prov_node.first.wait_for(state="visible", timeout=10000)
+            assert prov_node.count() >= 1, (
+                f"Node {node.id} ({node.type}) provenance graph rendered no nodes"
             )
         # self._save_screenshot(request)
