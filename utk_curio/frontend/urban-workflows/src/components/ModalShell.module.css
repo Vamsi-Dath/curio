@@ -1,0 +1,51 @@
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 499;
+}
+
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 480px;
+  max-width: 90vw;
+  max-height: 80vh;
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  z-index: 500;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.large {
+  width: 50%;
+  height: 70%;
+  max-width: none;
+  max-height: none;
+}
+
+.closeX {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  cursor: pointer;
+  font-size: 16px;
+  background: none;
+  border: none;
+  line-height: 1;
+  color: #1E1F23;
+  padding: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeX:hover {
+  color: #555;
+}

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import CSS from "csstype";
+import ModalShell from "./ModalShell";
+import styles from "./LlmSettingsModal.module.css";
 import { useUserContext } from "../providers/UserProvider";
 
 interface Props {
@@ -117,28 +118,28 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const info = PROVIDER_INFO[uiMode];
 
   return (
-    <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={modalStyle}>
-        <h2 style={titleStyle}>LLM Settings</h2>
+    <ModalShell onClose={onClose}>
+      <div className={styles.content}>
+        <h2 className={styles.title}>LLM Settings</h2>
 
         {user?.is_guest ? (
           <>
-            <p style={guestNoticeStyle}>
+            <p className={styles.guestNotice}>
               LLM settings are managed by your administrator.
             </p>
-            <div style={buttonRowStyle}>
-              <button style={cancelBtnStyle} onClick={onClose}>Close</button>
+            <div className={styles.buttonRow}>
+              <button className={styles.cancelBtn} onClick={onClose}>Close</button>
             </div>
           </>
         ) : (
           <>
-            <div style={fieldStyle}>
-              <label style={labelStyle}>Provider</label>
-              <div style={modeTabsStyle}>
+            <div className={styles.field}>
+              <label className={styles.label}>Provider</label>
+              <div className={styles.modeTabs}>
                 {(["openai", "anthropic", "gemini", "custom"] as UiMode[]).map((m) => (
                   <button
                     key={m}
-                    style={{ ...modeTabStyle, ...(uiMode === m ? modeTabActiveStyle : {}) }}
+                    className={`${styles.modeTab}${uiMode === m ? ` ${styles.modeTabActive}` : ""}`}
                     onClick={() => handleModeChange(m)}
                     type="button"
                   >
@@ -152,28 +153,28 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
 
             {info.showBaseUrl && (
-              <div style={fieldStyle}>
-                <label style={labelStyle}>Base URL</label>
+              <div className={styles.field}>
+                <label className={styles.label}>Base URL</label>
                 <input
-                  style={inputStyle}
+                  className={styles.input}
                   type="text"
                   value={baseUrl}
                   onChange={(e) => setBaseUrl(e.target.value)}
                   placeholder={info.baseUrlPlaceholder}
                 />
-                <span style={hintStyle}>Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, Groq, Azure, …)</span>
+                <span className={styles.hint}>Any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM, Groq, Azure, …)</span>
               </div>
             )}
 
-            <div style={fieldStyle}>
-              <label style={labelStyle}>
+            <div className={styles.field}>
+              <label className={styles.label}>
                 API Key{" "}
-                <span style={optionalStyle}>
+                <span className={styles.optional}>
                   {user?.has_llm_api_key ? "(saved — leave blank to keep)" : uiMode === "custom" ? "(optional for keyless servers)" : "(required)"}
                 </span>
               </label>
               <input
-                style={inputStyle}
+                className={styles.input}
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
@@ -181,16 +182,16 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 autoComplete="new-password"
               />
               {info.keyLink && (
-                <a href={info.keyLink} target="_blank" rel="noreferrer" style={keyLinkStyle}>
+                <a href={info.keyLink} target="_blank" rel="noreferrer" className={styles.keyLink}>
                   {info.keyLinkLabel} →
                 </a>
               )}
             </div>
 
-            <div style={fieldStyle}>
-              <label style={labelStyle}>Model</label>
+            <div className={styles.field}>
+              <label className={styles.label}>Model</label>
               <input
-                style={inputStyle}
+                className={styles.input}
                 type="text"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
@@ -198,164 +199,22 @@ const LlmSettingsModal: React.FC<Props> = ({ isOpen, onClose }) => {
               />
             </div>
 
-            {error && <p style={errorStyle}>{error}</p>}
-            {success && <p style={successStyle}>Settings saved.</p>}
+            {error && <p className={styles.error}>{error}</p>}
+            {success && <p className={styles.success}>Settings saved.</p>}
 
-            <div style={buttonRowStyle}>
-              <button style={cancelBtnStyle} onClick={onClose} disabled={saving}>
+            <div className={styles.buttonRow}>
+              <button className={styles.cancelBtn} onClick={onClose} disabled={saving}>
                 Cancel
               </button>
-              <button style={saveBtnStyle} onClick={handleSave} disabled={saving}>
+              <button className={styles.saveBtn} onClick={handleSave} disabled={saving}>
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
           </>
         )}
       </div>
-    </div>
+    </ModalShell>
   );
-};
-
-const overlayStyle: CSS.Properties = {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(0,0,0,0.5)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-};
-
-const modalStyle: CSS.Properties = {
-  backgroundColor: "#fff",
-  borderRadius: "8px",
-  padding: "28px 32px",
-  width: "480px",
-  maxWidth: "90vw",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
-  fontFamily: "Rubik, -apple-system, BlinkMacSystemFont, sans-serif",
-};
-
-const titleStyle: CSS.Properties = {
-  margin: "0 0 20px",
-  fontSize: "18px",
-  fontWeight: 600,
-  color: "#1E1F23",
-};
-
-const modeTabsStyle: CSS.Properties = {
-  display: "flex",
-  gap: "6px",
-  flexWrap: "wrap",
-};
-
-const modeTabStyle: CSS.Properties = {
-  padding: "6px 14px",
-  border: "1px solid #ddd",
-  borderRadius: "4px",
-  background: "#fff",
-  color: "#555",
-  fontSize: "13px",
-  cursor: "pointer",
-  fontFamily: "inherit",
-};
-
-const modeTabActiveStyle: CSS.Properties = {
-  border: "1px solid #1E1F23",
-  background: "#1E1F23",
-  color: "#fff",
-  fontWeight: 600,
-};
-
-const fieldStyle: CSS.Properties = {
-  marginBottom: "16px",
-  display: "flex",
-  flexDirection: "column",
-  gap: "4px",
-};
-
-const labelStyle: CSS.Properties = {
-  fontSize: "12px",
-  fontWeight: 600,
-  color: "#555",
-  textTransform: "uppercase",
-  letterSpacing: "0.5px",
-};
-
-const optionalStyle: CSS.Properties = {
-  fontWeight: 400,
-  textTransform: "none",
-  color: "#999",
-  letterSpacing: 0,
-};
-
-const hintStyle: CSS.Properties = {
-  fontSize: "11px",
-  color: "#999",
-};
-
-const inputStyle: CSS.Properties = {
-  padding: "8px 10px",
-  border: "1px solid #ddd",
-  borderRadius: "4px",
-  fontSize: "13px",
-  color: "#1E1F23",
-  outline: "none",
-  width: "100%",
-  boxSizing: "border-box",
-};
-
-const keyLinkStyle: CSS.Properties = {
-  fontSize: "12px",
-  color: "#3567C7",
-  textDecoration: "none",
-  marginTop: "2px",
-};
-
-const buttonRowStyle: CSS.Properties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: "8px",
-  marginTop: "24px",
-};
-
-const cancelBtnStyle: CSS.Properties = {
-  padding: "7px 18px",
-  border: "1px solid #ddd",
-  borderRadius: "4px",
-  background: "#fff",
-  color: "#555",
-  fontSize: "13px",
-  cursor: "pointer",
-};
-
-const saveBtnStyle: CSS.Properties = {
-  padding: "7px 18px",
-  border: "none",
-  borderRadius: "4px",
-  background: "#1E1F23",
-  color: "#fff",
-  fontSize: "13px",
-  fontWeight: 600,
-  cursor: "pointer",
-};
-
-const errorStyle: CSS.Properties = {
-  color: "#c0392b",
-  fontSize: "13px",
-  margin: "8px 0 0",
-};
-
-const successStyle: CSS.Properties = {
-  color: "#2F8F4A",
-  fontSize: "13px",
-  margin: "8px 0 0",
-};
-
-const guestNoticeStyle: CSS.Properties = {
-  color: "#666",
-  fontSize: "14px",
-  marginBottom: "8px",
 };
 
 export default LlmSettingsModal;

@@ -1,13 +1,9 @@
 import React from "react";
-
-import "bootstrap/dist/css/bootstrap.min.css";
-
-import Button from "react-bootstrap/Button";
-import Modal from "react-bootstrap/Modal";
+import ModalShell from "./ModalShell";
+import content from "./modal-content.module.css";
 import { AccessLevelType, NodeType } from "../constants";
 import { ConnectionValidator } from "../ConnectionValidator";
 import { getNodeDescriptor } from "../registry";
-import "./Node.css"
 
 type DescriptionModalProps = {
     nodeId: string;
@@ -30,9 +26,7 @@ function DescriptionModal({
     handleClose,
     custom,
 }: DescriptionModalProps) {
-    const closeModal = () => {
-        handleClose();
-    };
+    if (!show) return null;
 
     const getTypeDescription = (nodeType: NodeType) => {
         const descriptor = getNodeDescriptor(nodeType);
@@ -85,31 +79,29 @@ function DescriptionModal({
     })();
 
     return (
-      <>
-        <Modal show={show} onHide={closeModal}>
-          <Modal.Header closeButton>
-            <Modal.Title>Description</Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            <p>Node Type: {nodeLabel}</p>
-            {custom != undefined && custom ? (
-              <p>Custom template: {name}</p>
-            ) : custom != undefined && !custom ? (
-              <p>Default template: {name}</p>
-            ) : null}
-            {description != undefined ? <p>{description}</p> : null}
-            {accessLevel != undefined ? <p>Access Level: {accessLevel}</p> : null}
-            {getTypeDescription(nodeType).map((line: string, index: number) => {
-              return <p key={"description_modal_" + nodeId + "_" + index}>{line}</p>;
-            })}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="primary" onClick={closeModal}>
-              Close
-            </Button>
-          </Modal.Footer>
-        </Modal>
-      </>
+        <ModalShell onClose={handleClose}>
+            <div className={content.content}>
+                <h2 className={content.title}>Description</h2>
+                <div>
+                    <p>Node Type: {nodeLabel}</p>
+                    {custom != undefined && custom ? (
+                        <p>Custom template: {name}</p>
+                    ) : custom != undefined && !custom ? (
+                        <p>Default template: {name}</p>
+                    ) : null}
+                    {description != undefined ? <p>{description}</p> : null}
+                    {accessLevel != undefined ? <p>Access Level: {accessLevel}</p> : null}
+                    {getTypeDescription(nodeType).map((line: string, index: number) => (
+                        <p key={"description_modal_" + nodeId + "_" + index}>{line}</p>
+                    ))}
+                </div>
+                <div className={content.buttonRow}>
+                    <button className={content.primaryButton} onClick={handleClose}>
+                        Close
+                    </button>
+                </div>
+            </div>
+        </ModalShell>
     );
 }
 

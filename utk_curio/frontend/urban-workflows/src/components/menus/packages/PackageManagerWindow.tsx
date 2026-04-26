@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import styles from "./PackageManagerWindow.module.css";
+import ModalShell from "../../ModalShell";
 import { useFlowContext } from "../../../providers/FlowProvider";
 
 export default function PackageManagerWindow({
@@ -47,11 +48,8 @@ export default function PackageManagerWindow({
     if (!open) return null;
 
     return (
-        <>
-            <div className={styles.modalBackground}></div>
-            <div className={styles.modal}>
-                <span className={styles.closeX} onClick={closeModal}>X</span>
-                <div className={styles.container}>
+        <ModalShell onClose={closeModal}>
+            <div className={styles.container}>
                     <h2 className={styles.title}>Packages</h2>
                     <p className={styles.subtitle}>pip packages required by this dataflow</p>
 
@@ -102,8 +100,7 @@ export default function PackageManagerWindow({
                             ))}
                         </div>
                     )}
-                </div>
             </div>
-        </>
+        </ModalShell>
     );
 }

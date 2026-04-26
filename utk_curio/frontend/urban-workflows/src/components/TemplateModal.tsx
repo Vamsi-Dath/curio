@@ -1,10 +1,6 @@
 import React, { useState } from "react";
-
-// Bootstrap
-import "bootstrap/dist/css/bootstrap.min.css";
-
-import Button from "react-bootstrap/Button";
-import Modal from "react-bootstrap/Modal";
+import ModalShell from "./ModalShell";
+import content from "./modal-content.module.css";
 import { Template, useTemplateContext } from "../providers/TemplateProvider";
 import { AccessLevelType, NodeType } from "../constants";
 
@@ -33,12 +29,13 @@ function TemplateModal({
     const [accessLevel, setAccessLevel] = useState<string>("ANY");
     const [description, setDescription] = useState<string>("");
 
+    if (!show) return null;
+
     const closeModal = (save: boolean = true) => {
         let template: any = {}
 
         if (save) {
             if (newTemplateFlag) {
-                // creating new template
                 template = createUserTemplate(
                     nodeType,
                     name,
@@ -46,11 +43,8 @@ function TemplateModal({
                     accessLevel as AccessLevelType,
                     code
                 );
-
                 callBack(template);
             } else {
-                // updating existing template
-
                 template = {
                     id: templateId,
                     type: nodeType,
@@ -60,13 +54,12 @@ function TemplateModal({
                     code,
                     custom: true,
                 };
-
                 editUserTemplate({ ...template } as Template);
                 callBack(template);
             }
         }
 
-        if(Object.keys(template).length > 0){ // If there is a template
+        if (Object.keys(template).length > 0) {
             fetch(process.env.BACKEND_URL + "/addTemplate", {
                 method: "POST",
                 body: JSON.stringify(template),
@@ -80,74 +73,55 @@ function TemplateModal({
     };
 
     return (
-        <>
-            <Modal show={show} onHide={closeModal}>
-                <Modal.Header closeButton>
-                    {newTemplateFlag ? (
-                        <Modal.Title>New Template</Modal.Title>
-                    ) : (
-                        <Modal.Title>Editing Template</Modal.Title>
-                    )}
-                </Modal.Header>
-                <Modal.Body>
-                    <label htmlFor="name">Name: </label>
+        <ModalShell onClose={() => closeModal(false)}>
+            <div className={content.content}>
+                <h2 className={content.title}>
+                    {newTemplateFlag ? "New Template" : "Editing Template"}
+                </h2>
+
+                <div className={content.field}>
+                    <label className={content.label} htmlFor="template-name">Name</label>
                     <input
-                        value={name}
-                        onChange={(event) => {
-                            setName(event.target.value);
-                        }}
+                        id="template-name"
+                        className={content.input}
                         type="text"
-                        name="name"
-                        style={{ marginLeft: "5px" }}
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
                     />
-                    <br />
-                    <label htmlFor="accessLevel">Access Level: </label>
+                </div>
+
+                <div className={content.field}>
+                    <label className={content.label} htmlFor="template-access">Access Level</label>
                     <select
+                        id="template-access"
+                        className={content.select}
                         value={accessLevel}
-                        onChange={(event) => {
-                            setAccessLevel(event.target.value);
-                        }}
-                        name="accessLevel"
+                        onChange={(e) => setAccessLevel(e.target.value)}
                     >
-                        {/* <option value="PROGRAMMER">Programmer</option> */}
-                        {/* <option value="EXPERT">Expert</option> */}
                         <option value="ANY">Any</option>
                     </select>
-                    <br />
-                    <label htmlFor="description">Description: </label>
+                </div>
+
+                <div className={content.field}>
+                    <label className={content.label} htmlFor="template-description">Description</label>
                     <textarea
+                        id="template-description"
+                        className={content.textarea}
                         value={description}
-                        onChange={(event) => {
-                            setDescription(event.target.value);
-                        }}
-                        name="description"
-                        style={{
-                            marginLeft: "5px",
-                            marginTop: "5px",
-                            resize: "none",
-                        }}
-                    ></textarea>
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button
-                        variant="secondary"
-                        onClick={() => {
-                            closeModal(false);
-                        }}
-                    >
+                        onChange={(e) => setDescription(e.target.value)}
+                    />
+                </div>
+
+                <div className={content.buttonRow}>
+                    <button className={content.secondaryButton} onClick={() => closeModal(false)}>
                         Close
-                    </Button>
-                    <Button
-                        variant="primary"
-                        onClick={() => {
-                            closeModal();
-                        }}
-                    >
+                    </button>
+                    <button className={content.primaryButton} onClick={() => closeModal(true)}>
                         Save
-                    </Button>
-                </Modal.Footer>
-            </Modal>
-        </>
+                    </button>
+                </div>
+            </div>
+        </ModalShell>
     );
 }
 

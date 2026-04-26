@@ -18,6 +18,7 @@ import { useCode } from "../../../hook/useCode";
 import DataflowThumbnail from "../../DataflowThumbnail";
 import { getLayoutedElements } from "../../../utils/provenanceLayout";
 import styles from "./TrillProvenanceWindow.module.css";
+import ModalShell from "../../ModalShell";
 
 const HANDLE_STYLE: React.CSSProperties = { opacity: 0, pointerEvents: "none" };
 const EDGE_STYLE: React.CSSProperties = { stroke: "#222", strokeWidth: 2 };
@@ -175,22 +176,16 @@ export default function TrillProvenanceWindow({
     closeModal: any;
     workflowName: string;
 }) {
+    if (!open) return null;
+
     return (
-        <>
-            {open ? (
-                <div>
-                    <div className={styles.modalBackground} />
-                    <div className={styles.modal}>
-                        <span className={styles.closeX} onClick={closeModal}>X</span>
-                        <p className={styles.title}>Provenance for {workflowName}</p>
-                        <div className={styles.graphDiv}>
-                            <ReactFlowProvider>
-                                <TrillProvenanceGraph open={open} />
-                            </ReactFlowProvider>
-                        </div>
-                    </div>
-                </div>
-            ) : null}
-        </>
+        <ModalShell onClose={closeModal} size="large">
+            <p className={styles.title}>Provenance for {workflowName}</p>
+            <div className={styles.graphDiv}>
+                <ReactFlowProvider>
+                    <TrillProvenanceGraph open={open} />
+                </ReactFlowProvider>
+            </div>
+        </ModalShell>
     );
 }

@@ -1,0 +1,30 @@
+.toggleGroup {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toggleBtn {
+  flex: 1;
+  padding: 14px 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  color: #555;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+  text-transform: capitalize;
+}
+
+.toggleBtn:hover {
+  border-color: #1E1F23;
+  color: #1E1F23;
+}
+
+.toggleBtnActive {
+  border: 1px solid #1E1F23;
+  background: #1E1F23;
+  color: #fff;
+  font-weight: 600;
+}

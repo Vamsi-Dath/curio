@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import styles from "./DatasetsWindow.module.css";
+import ModalShell from "../../ModalShell";
 
 export default function DatasetsWindow({
     open,
@@ -64,11 +65,8 @@ export default function DatasetsWindow({
     if (!open) return null;
 
     return (
-        <>
-            <div className={styles.modalBackground}></div>
-            <div className={styles.modal}>
-                <span className={styles.closeX} onClick={closeModal}>X</span>
-                <div className={styles.container}>
+        <ModalShell onClose={closeModal}>
+            <div className={styles.container}>
                     <h2 className={styles.title}>Datasets</h2>
                     <p className={styles.subtitle}>files available in the sandbox</p>
 
@@ -105,8 +103,7 @@ export default function DatasetsWindow({
                             ))
                         )}
                     </div>
-                </div>
             </div>
-        </>
+        </ModalShell>
     );
 }

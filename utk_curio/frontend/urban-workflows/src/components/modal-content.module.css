@@ -1,0 +1,114 @@
+.content {
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1E1F23;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: #666;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.input,
+.select,
+.textarea {
+  padding: 8px 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #1E1F23;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.buttonRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.primaryButton {
+  padding: 7px 18px;
+  border: none;
+  border-radius: 4px;
+  background: #1E1F23;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.primaryButton:hover:not(:disabled) {
+  background: rgb(251, 170, 105);
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.secondaryButton {
+  padding: 7px 18px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #fff;
+  color: #555;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: #f5f5f5;
+}
+
+.hint {
+  font-size: 11px;
+  color: #999;
+}
+
+.error {
+  color: #c0392b;
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.success {
+  color: #2F8F4A;
+  font-size: 13px;
+  margin: 4px 0 0;
+}

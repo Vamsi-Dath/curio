@@ -1,92 +1,52 @@
 import React, { useCallback, useState } from "react";
-import CSS from "csstype";
-import Container from "react-bootstrap/Container";
-import { Button, ButtonGroup, Col, Row, ToggleButton } from "react-bootstrap";
-
+import content from "../modal-content.module.css";
+import styles from "./UserTypeForm.module.css";
 import { useUserContext } from "../../providers/UserProvider";
 import { useDialogContext } from "../../providers/DialogProvider";
 
 export const UserTypeForm = () => {
   const { unsetDialog } = useDialogContext();
   const { saveUserType } = useUserContext();
-  // const [type, setType] = useState<"expert" | "programmer" | null>(null);
   const [type, setType] = useState<"expert" | "programmer" | null>("programmer");
 
-  const types = [
+  const types: { id: number; name: "expert" | "programmer" }[] = [
     { id: 1, name: "expert" },
     { id: 2, name: "programmer" },
   ];
 
   const handleSave = useCallback(async () => {
     if (!type) return;
-
     await saveUserType(type);
     unsetDialog();
   }, [type]);
 
   return (
-    <div style={containerStyle} onClick={(e) => e.stopPropagation()}>
-      <h1 style={titleStyle}>
-        Welcome to out platform! <br />
-        Now, inform which professional are you:
-      </h1>
-      <Container className="justify-content-md-center">
-        <Row>
-          <ButtonGroup>
-            {types.map((currentType) => (
-              <ToggleButton
-                key={currentType.id}
-                id={`radio-${currentType.id}`}
-                type="radio"
-                name="radio"
-                value={currentType.name}
-                variant="outline-primary"
-                checked={type === currentType.name}
-                onChange={(e) =>
-                  setType(e.currentTarget.value as "programmer" | "expert")
-                }
-                style={{ margin: "10px", padding: "20px" }}
-              >
-                {currentType.name}
-              </ToggleButton>
-            ))}
-          </ButtonGroup>
-        </Row>
+    <div className={content.content}>
+      <h2 className={content.title}>Welcome to our platform!</h2>
+      <p className={content.subtitle}>Which professional are you?</p>
 
-        <Row>
-          <Button
-            style={{
-              width: "300px",
-              margin: "50px auto 0 auto",
-              padding: "20px",
-            }}
-            size="lg"
-            disabled={!type}
-            onClick={handleSave}
+      <div className={styles.toggleGroup}>
+        {types.map((t) => (
+          <button
+            key={t.id}
+            className={`${styles.toggleBtn}${type === t.name ? ` ${styles.toggleBtnActive}` : ""}`}
+            onClick={() => setType(t.name)}
+            type="button"
           >
-            Save
-          </Button>
-        </Row>
-      </Container>
+            {t.name}
+          </button>
+        ))}
+      </div>
+
+      <div className={content.buttonRow}>
+        <button
+          className={content.primaryButton}
+          disabled={!type}
+          onClick={handleSave}
+        >
+          Save
+        </button>
+      </div>
     </div>
   );
-};
-
-const containerStyle: CSS.Properties = {
-  width: "500px",
-  maxWidth: "90%",
-  height: "500px",
-  display: "flex",
-  flexDirection: "column",
-  justifyContent: "center",
-  alignItems: "center",
-  backgroundColor: "white",
-  padding: "10px",
-};
-
-const titleStyle: CSS.Properties = {
-  fontWeight: "bold",
-  marginBottom: "60px",
-  textAlign: "center",
-  fontSize: "1.8em",
 };
