@@ -278,6 +278,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const playAllStateRef = useRef<PlayAllState | null>(null);
     const markNodeExecutedRef = useRef<(nodeId: string) => void>(() => {});
     const markNodeStaleRef = useRef<(nodeId: string) => void>(() => {});
+    const markDirtyRef = useRef<() => void>(() => {});
 
     const setOutputs = useCallback((fnOrValue: ((prev: IOutput[]) => IOutput[]) | IOutput[]) => {
         _setOutputs((prev) => {
@@ -561,6 +562,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                 connection.target,
                 connection.targetHandle
             );
+            markDirtyRef.current();
 
             const nodes = custom_nodes ? custom_nodes : reactFlow.getNodes();
             const edges = custom_edges ? custom_edges : reactFlow.getEdges();
@@ -1034,6 +1036,7 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     markNodeExecutedRef.current = workflowOps.markNodeExecuted;
     markNodeStaleRef.current = workflowOps.markNodeStale;
+    markDirtyRef.current = workflowOps.markDirty;
 
     const nodeActionsValue = useMemo<NodeActionsContextProps>(() => ({
         workflowNameRef,

@@ -5,7 +5,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faUpDownLeftRight } from "@fortawesome/free-solid-svg-icons";
 import "./Node.css"
 
-export default function CommentsNode({ data }) {
+export default function CommentsNode({ data }: { data: any }) {
   const [showComments, setShowComments] = useState(false);
   const [comments, setComments] = useState<IComment[]>([]);
 
@@ -30,7 +30,11 @@ export default function CommentsNode({ data }) {
 
   return (
     <NodeContainer
+      data={data}
       nodeId={data.nodeId}
+      templateData={{}}
+      promptDescription={() => {}}
+      setOutputCallback={() => {}}
       styles={{ width: "auto", height: "auto" }}
       disableComments={true}
     >

@@ -63,6 +63,7 @@ export default function UpMenu({
     const {
         workflowNameRef,
         projectDirty,
+        projectSavedAt,
         cleanCanvas,
         saveCurrentProject,
         saveAsNewProject,
@@ -376,6 +377,7 @@ export default function UpMenu({
                                     <div
                                         className={styles.dropDownRow}
                                         onClick={() => {
+                                            if (projectDirty && !window.confirm("You have unsaved changes. Leaving will lose your work.")) return;
                                             navigate("/projects");
                                             setActiveMenu(null);
                                         }}
@@ -497,6 +499,30 @@ export default function UpMenu({
                 >
                     <FontAwesomeIcon icon={faRobot} />
                 </button>
+
+                {/* Save status indicator */}
+                {(saving || projectDirty || projectSavedAt) && (
+                    <button
+                        className={clsx(styles.button, styles.saveStatus)}
+                        style={{ cursor: saving ? "default" : "pointer" }}
+                        disabled={saving}
+                        onClick={handleSave}
+                        title={
+                            saving          ? "Saving…"
+                            : projectDirty  ? "Unsaved changes — click to save"
+                            : `Saved at ${projectSavedAt!.toLocaleTimeString()} — click to save`
+                        }
+                    >
+                        <FontAwesomeIcon
+                            icon={faFloppyDisk}
+                            className={clsx(
+                                saving || projectDirty ? styles.unsavedIcon : styles.savedIcon,
+                                saving && styles.savingPulse,
+                            )}
+                        />
+                    </button>
+                )}
+
                 <UserMenu />
             </div>
 

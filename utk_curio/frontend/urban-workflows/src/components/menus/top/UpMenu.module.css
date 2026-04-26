@@ -1,7 +1,3 @@
-.aiIconActive {
-  color: rgb(251, 170, 105);
-}
-
 .logo {
   margin-right: 15px;
   margin-left: 15px;
@@ -35,6 +31,11 @@
   border: none;
   /* border-bottom: 3px solid #fbfcf6; */
   border-radius: 4px;
+}
+
+/* Must appear after .button so it wins the cascade when both classes are present */
+.aiIconActive {
+  color: #5cb85c;
 }
 
 .dashboardOn {
@@ -147,10 +148,35 @@
   position: relative;
 }
 
-.rightSide { 
+.rightSide {
   display: flex;
   position: absolute;
   right: 90px;
   top: 12px;
   z-index: 200;
+}
+
+.saveStatus {
+  cursor: default;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-top: 8px;
+}
+
+.unsavedIcon {
+  color: rgb(251, 170, 105);
+}
+
+.savedIcon {
+  color: #5cb85c;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.savingPulse {
+  animation: pulse 1s ease-in-out infinite;
 }

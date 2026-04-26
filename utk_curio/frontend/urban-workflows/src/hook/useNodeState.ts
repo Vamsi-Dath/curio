@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { NodeType } from '../constants';
+import { ICodeDataContent } from '../types';
 import { Template, useTemplateContext } from '../providers/TemplateProvider';
 import { useUserContext } from '../providers/UserProvider';
 
 export interface NodeOutput {
   code: string;
-  content: string;
+  content: ICodeDataContent | string;
   outputType?: string;
 }
 

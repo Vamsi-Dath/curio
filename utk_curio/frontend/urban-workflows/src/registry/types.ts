@@ -100,12 +100,6 @@ export interface LifecycleResult {
   setOutputCallbackOverride?: any;
   outputOverride?: ICodeData;
   /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
-  /** Replace `nodeState.output` — used when output state is managed locally (DataPool, MergeFlow). */
-  outputOverride?: ICodeData;
-  /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
-  /** Replace `nodeState.output` — used when output state is managed locally (DataPool, MergeFlow). */
-  outputOverride?: ICodeData;
-  /** Extra handles appended to `adapter.handles` at render time (MergeFlow dynamic inputs). */
   dynamicHandles?: HandleDef[];
   /** When `true`, the play button is disabled. */
   disablePlay?: boolean;

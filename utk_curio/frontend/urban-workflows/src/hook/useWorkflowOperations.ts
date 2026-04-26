@@ -86,19 +86,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
     const [nodeExecStatus, setNodeExecStatus] = useState<Record<string, "stale" | "executed">>({});
 
     const markDirty = useCallback(() => {
-        if (projectId) setProjectDirty(true);
-    }, [projectId]);
+        setProjectDirty(true);
+    }, []);
 
     // beforeunload guard
     useEffect(() => {
-        if (!projectDirty || !projectId) return;
+        if (!projectDirty) return;
         const handler = (e: BeforeUnloadEvent) => {
             e.preventDefault();
             e.returnValue = "";
         };
         window.addEventListener("beforeunload", handler);
         return () => window.removeEventListener("beforeunload", handler);
-    }, [projectDirty, projectId]);
+    }, [projectDirty]);
 
     // ---------------------------------------------------------------------------
     // Effects
@@ -535,6 +535,19 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             return detail;
         }
     }, [projectId, projectName, workflowNameRef, reactFlow, deps.outputsRef]);
+
+    // Auto-save every 30 seconds when a project has been explicitly saved at least once
+    useEffect(() => {
+        if (!projectId || !projectDirty) return;
+        const id = window.setInterval(async () => {
+            try {
+                await saveCurrentProject();
+            } catch (err) {
+                console.error("Auto-save failed:", err);
+            }
+        }, 30_000);
+        return () => window.clearInterval(id);
+    }, [projectId, projectDirty, saveCurrentProject]);
 
     const saveAsNewProject = useCallback(async (name: string) => {
         const currentNodes = reactFlow.getNodes();

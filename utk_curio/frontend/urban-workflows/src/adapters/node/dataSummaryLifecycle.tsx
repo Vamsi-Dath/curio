@@ -167,7 +167,7 @@ export const useDataSummaryLifecycle: NodeLifecycleHook = (data, nodeState) => {
   // Watching nodeState.output avoids overriding setOutputCallback (which causes render loops).
   useEffect(() => {
     if (nodeState.output.code === 'success') {
-      const match = nodeState.output.content.match(/Saved to file: (.+)/);
+      const match = typeof nodeState.output.content === 'string' ? nodeState.output.content.match(/Saved to file: (.+)/) : null;
       if (match) {
         fetchData(match[1].trim())
           .then((result: any) => setSummaryData(result?.data ?? result))

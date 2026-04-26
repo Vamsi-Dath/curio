@@ -10,6 +10,7 @@ export interface ICodeDataContent {
   dataType: string;
   data: any;
   metadata?: any;
+  path?: string;
 }
 
 /**
@@ -26,7 +27,7 @@ export interface ICodeData {
  */
 export interface INodeData {
   nodeId: string;
-  input?: ICodeDataContent;
+  input?: any;
   defaultCode?: string;
   pythonInterpreter?: PythonInterpreter;
   outputCallback?: (nodeId: string, output: string) => void;

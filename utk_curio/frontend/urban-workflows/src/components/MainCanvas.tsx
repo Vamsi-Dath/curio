@@ -48,6 +48,7 @@ export function MainCanvas() {
         isValidConnection,
         onEdgesDelete,
         onNodesDelete,
+        markDirty,
     } = useFlowContext();
 
     const isDraggingRef = useRef(false);
@@ -251,11 +252,13 @@ export function MainCanvas() {
         if (!type) return;
         const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
         createCodeNode(type, { position });
-    }, [screenToFlowPosition, createCodeNode]);
+        markDirty();
+    }, [screenToFlowPosition, createCodeNode, markDirty]);
 
     const handleNodesChange = useCallback((changes: NodeChange[]) => {
         const allowedChanges: NodeChange[] = [];
         const currentEdges = reactFlow.getEdges();
+        let dirty = false;
 
         for (const change of changes) {
             let allowed = true;
@@ -271,6 +274,7 @@ export function MainCanvas() {
                         break;
                     }
                 }
+                if (allowed) dirty = true;
             }
 
             if (
@@ -282,14 +286,16 @@ export function MainCanvas() {
                     updatePositionDashboard(change.id, change);
                 else
                     updatePositionWorkflow(change.id, change);
+                dirty = true;
             }
 
             if (allowed) allowedChanges.push(change);
         }
 
+        if (dirty) markDirty();
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
-    }, [reactFlow, showToast, updatePositionDashboard, updatePositionWorkflow, onNodesDelete, onNodesChange]);
+    }, [reactFlow, showToast, updatePositionDashboard, updatePositionWorkflow, onNodesDelete, onNodesChange, markDirty]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
         let selected = "";
@@ -305,24 +311,28 @@ export function MainCanvas() {
             }
         }
 
+        let dirty = false;
         for (const change of changes) {
             if (
                 change.type === "remove" &&
                 (selected === change.id || prevSelectedId === change.id)
             ) {
                 allowedChanges.push(change);
+                dirty = true;
             } else if (change.type !== "remove") {
                 allowedChanges.push(change);
             }
         }
 
+        if (dirty) markDirty();
         return onEdgesChange(allowedChanges);
-    }, [onEdgesChange]);
+    }, [onEdgesChange, markDirty]);
 
     const handleEdgesDelete = useCallback((edges: Edge[]) => {
         const allowedEdges = edges.filter(edge => selectedEdgeIdRef.current === edge.id);
+        if (allowedEdges.length > 0) markDirty();
         return onEdgesDelete(allowedEdges);
-    }, [onEdgesDelete]);
+    }, [onEdgesDelete, markDirty]);
 
     const handleSelectionChange = useCallback((selection: { nodes: any[]; edges: any[] }) => {
         setSelectedComponents(selection);

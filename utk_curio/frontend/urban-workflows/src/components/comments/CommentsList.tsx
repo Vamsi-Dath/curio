@@ -15,7 +15,7 @@ export interface IComment {
   text: string;
   user: {
     name: string;
-    photo: string;
+    photo: string | null;
   };
   canDelete: boolean;
   resolved: boolean;
@@ -76,7 +76,7 @@ export const CommentsList = ({
             }}
           >
             <img
-              src={comment.user.photo}
+              src={comment.user.photo ?? undefined}
               alt={comment.user.name}
               style={imageStyles}
             />

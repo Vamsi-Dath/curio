@@ -19,7 +19,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
   const { workflowNameRef } = useFlowContext();
   const { nodeExecProv } = useProvenanceContext();
 
-  const [inputData, setInputData] = useState();
+  const [inputData, setInputData] = useState<any>();
   const [defaultGrammar, setDefaultGrammar] = useState<string>("{}");
 
   const [resolutionMode, _setResolutionMode] = useState<ResolutionTypeUTK>(
@@ -77,7 +77,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
 
     if (!isEqual && inputData !== undefined) {
       const _token = getToken();
-      const _authHeader = _token ? { "Authorization": `Bearer ${_token}` } : {};
+      const _authHeader: Record<string, string> = _token ? { "Authorization": `Bearer ${_token}` } : {};
       fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
         method: "POST",
         headers: {
