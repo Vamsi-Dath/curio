@@ -5,6 +5,7 @@ import { Environment, GrammarInterpreter } from "utk";
 
 import { get_camera } from "../utils/parsing";
 import { fetchData } from "../services/api";
+import { getToken } from "../utils/authApi";
 import { formatDate, getType, mapTypes } from "../utils/formatters";
 
 import { ICodeData } from "../types";
@@ -75,10 +76,13 @@ export function useUTK({ data, code }: { data: any, code: string }) {
     const isEqual = JSON.stringify(inputData) === JSON.stringify(dfIN);
 
     if (!isEqual && inputData !== undefined) {
+      const _token = getToken();
+      const _authHeader = _token ? { "Authorization": `Bearer ${_token}` } : {};
       fetch(`${process.env.BACKEND_URL}/insert_attribute_value_change`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ..._authHeader,
         },
         body: JSON.stringify({
           data: {
@@ -116,6 +120,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ..._authHeader,
         },
         body: JSON.stringify({
           data: {
@@ -397,6 +402,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
             }
           }
 
+          const _tok = getToken();
           fetch(process.env.BACKEND_URL + "/toLayers", {
             method: "POST",
             body: JSON.stringify({
@@ -404,6 +410,7 @@ export function useUTK({ data, code }: { data: any, code: string }) {
             }),
             headers: {
               "Content-type": "application/json; charset=UTF-8",
+              ...(_tok ? { "Authorization": `Bearer ${_tok}` } : {}),
             },
           })
             .then((response) => response.json())

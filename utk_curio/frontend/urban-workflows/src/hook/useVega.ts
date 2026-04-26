@@ -3,6 +3,7 @@ import { NodeType, VisInteractionType } from "../constants";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 
 import { fetchData, transformToVega } from "../services/api";
+import { getToken } from "../utils/authApi";
 import { Dict } from "vega-lite";
 import { formatDate, mapTypes } from "../utils/formatters";
 import { parseDataframe, parseGeoDataframe } from "../utils/parsing";
@@ -149,10 +150,12 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       if (highlight && highlight.type != "UNDETERMINED") {
         let int_time = formatDate(new Date());
 
+        const _token = getToken();
         fetch(`${process.env.BACKEND_URL}/insert_interaction`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(_token ? { "Authorization": `Bearer ${_token}` } : {}),
           },
           body: JSON.stringify({
             data: {
@@ -214,10 +217,12 @@ export const useVega = ({ data, code }: { data: any; code: string; }) => {
       dfStringOUT
     );
 
+    const _vegaToken = getToken();
     await fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(_vegaToken ? { "Authorization": `Bearer ${_vegaToken}` } : {}),
       },
       body: JSON.stringify({
         data: {
