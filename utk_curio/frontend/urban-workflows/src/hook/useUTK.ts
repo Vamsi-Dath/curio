@@ -116,18 +116,6 @@ export function useUTK({ data, code }: { data: any, code: string }) {
         true
       );
 
-      fetch(`${process.env.BACKEND_URL}/insert_visualization`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ..._authHeader,
-        },
-        body: JSON.stringify({
-          data: {
-            activity_name: NodeType.VIS_UTK + "-" + data.nodeId,
-          },
-        }),
-      });
     }
   }, [data]);
 

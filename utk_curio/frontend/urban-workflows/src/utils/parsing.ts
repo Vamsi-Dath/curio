@@ -47,7 +47,6 @@ export const get_camera = (coordinates: number[]) => {
 };
 
 export const parseDataframe = (data: any) => {
-  console.log("Parsing", data);
   let columns = Object.keys(data);
   const values = Object.keys(data[columns[0]]).map((key) => {
     let obj: any = {};
@@ -63,7 +62,6 @@ export const parseDataframe = (data: any) => {
 };
 
 export const parseGeoDataframe = (data: any) => {
-  console.log("Parsing", data);
   let values = data.features.map((feature: any) => {
     return { ...feature.properties };
   });
