@@ -12,6 +12,7 @@ export enum NodeType {
   DATA_POOL = "DATA_POOL",
   MERGE_FLOW = "MERGE_FLOW",
   COMMENTS = "COMMENTS",
+  JS_COMPUTATION = "JS_COMPUTATION",
 }
 
 export enum EdgeType {

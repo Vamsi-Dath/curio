@@ -1,0 +1,44 @@
+{
+  "dataflow": {
+    "nodes": [
+      {
+        "id": "js-node-1",
+        "type": "JS_COMPUTATION",
+        "x": 800,
+        "y": 300,
+        "content": "// arg is the input from the previous node (null if none)\nconst result = [1, 2, 3].map(x => x * 2);\nconsole.log('doubled:', result);\nreturn result;",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      },
+      {
+        "id": "simple-view-1",
+        "type": "VIS_SIMPLE",
+        "x": 1430.6532668776103,
+        "y": 289.66053283702365,
+        "content": "",
+        "out": "DEFAULT",
+        "in": "DEFAULT",
+        "goal": "",
+        "metadata": {
+          "keywords": []
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "reactflow__edge-js-node-1out-simple-view-1in",
+        "source": "js-node-1",
+        "target": "simple-view-1"
+      }
+    ],
+    "name": "JSComputation",
+    "task": "",
+    "timestamp": 1777325054625,
+    "provenance_id": "JSComputation",
+    "packages": []
+  }
+}

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from shapely import wkt
 
-from utk_curio.sandbox.app.worker import _worker_init, execute_code
+from utk_curio.sandbox.app.worker import _worker_init, execute_code, execute_js_code
 from utk_curio.sandbox.util.parsers import load_from_duckdb, parseOutput
 
 _VALID_PACKAGE_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._\-]*(\[[\w,\s]+\])?(===?|~=|!=|>=?|<=?[a-zA-Z0-9._\-*]+)?$')
@@ -172,6 +172,28 @@ def exec():
 
     print(f"[sandbox /exec] total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
+
+@app.route('/execJs', methods=['POST'])
+def exec_js():
+    import time
+    import sys
+    t0 = time.perf_counter()
+
+    if request.json.get('code') is None:
+        abort(400, "Code was not included in the post request")
+
+    code       = request.json['code']
+    file_path  = request.json['file_path']
+    node_type  = request.json['nodeType']
+    data_type  = request.json['dataType']
+    session_id = request.json.get('session_id') or None
+    launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
+
+    result = execute_js_code(code, str(file_path), str(node_type), str(data_type), launch_dir, session_id=session_id)
+
+    print(f"[sandbox /execJs] total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
+    return jsonify(result)
+
 
 @app.route('/toLayers', methods=['POST'])
 def toLayers():

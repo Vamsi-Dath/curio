@@ -121,4 +121,14 @@ describe('Registered descriptors', () => {
       expect(desc.adapter.handles.length).toBeGreaterThan(0);
     }
   });
+
+  test('JS_COMPUTATION descriptor has expected properties', () => {
+    const desc = getNodeDescriptor(NodeType.JS_COMPUTATION);
+    expect(desc.id).toBe(NodeType.JS_COMPUTATION);
+    expect(desc.label).toBe('JS Computation');
+    expect(desc.category).toBe('computation');
+    expect(desc.adapter.editor.code).toBe(true);
+    expect(desc.adapter.editor.widgets).toBe(true);
+    expect(desc.inPalette).toBe(true);
+  });
 });

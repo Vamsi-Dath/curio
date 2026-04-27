@@ -97,7 +97,13 @@ const UserProvider = ({ children }: { children: React.ReactNode }) => {
     const bootstrap = async () => {
       setLoading(true);
       try {
-        const cfg = await authApi.getPublicConfig().catch(() => null);
+        const cfg = await authApi.getPublicConfig().catch(() => {
+          console.error(
+            "[Curio] Could not reach backend at /api/config/public. " +
+            "Is the backend running? Check terminal output."
+          );
+          return null;
+        });
         const projectPageSkipped = Boolean(
           cfg?.skip_project_page ?? cfg?.curio_no_project ?? false
         );

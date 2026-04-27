@@ -121,7 +121,7 @@ All node types are enumerated in `src/constants.ts` as the `NodeType` enum. Ther
 | Category | Node Types |
 |---|---|
 | Data | `DATA_LOADING`, `DATA_TRANSFORMATION`, `DATA_SUMMARY`, `DATA_EXPORT`, `DATA_POOL` |
-| Computation | `COMPUTATION_ANALYSIS`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS` |
+| Computation | `COMPUTATION_ANALYSIS`, `JS_COMPUTATION`, `MERGE_FLOW`, `FLOW_SWITCH`, `CONSTANTS` |
 | Map visualization | `VIS_UTK` |
 | Chart/table visualization | `VIS_VEGA`, `VIS_SIMPLE` |
 | Annotation | `COMMENTS` |
@@ -295,21 +295,23 @@ When a user clicks the play button on a node, the following sequence occurs:
 1. UniversalNode.sendCode()
    Collects: node code, nodeType, upstream artifact ID + kind
 
-2. POST /processPythonCode  (Backend)
+2. POST /processPythonCode  (Backend)   [Python nodes]
+   POST /processJavaScriptCode (Backend) [JS_COMPUTATION nodes]
    Body: { code, nodeType, input: { filename: <artifact_id>, dataType: <kind> } }
 
 3. Backend proxies to Sandbox
-   POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec
+   POST {SANDBOX_HOST}:{SANDBOX_PORT}/exec    [Python nodes]
+   POST {SANDBOX_HOST}:{SANDBOX_PORT}/execJs  [JS_COMPUTATION nodes]
    Body: { code, nodeType, file_path: <artifact_id>, dataType: <kind> }
 
-4. Sandbox wraps user code in python_wrapper.txt and executes it
-   - Call load_from_duckdb(artifact_id) → reconstructs Python object
-   - detect_kind(input) to verify type matches node expectations
-   - Run user code with input available as `input` variable
-   - Call save_to_duckdb(output) → inserts artifact row, returns new artifact ID
-   - Print: { "path": "<new_artifact_id>", "dataType": "<kind>" }
+4. Sandbox executes user code
+   Python: wraps in python_wrapper.txt, runs via exec() in-process
+   JavaScript: spawns a Node.js subprocess, wraps code in async function(arg){…}
+   - Both: load_from_duckdb(artifact_id) → reconstructs the Python/JS value
+   - Both: save_to_duckdb(output) → inserts artifact row, returns new artifact ID
+   Returns: { "path": "<new_artifact_id>", "dataType": "<kind>" }
 
-5. Backend reads sandbox stdout
+5. Backend reads sandbox response
    Returns to Frontend: { stdout, stderr, output: { path: <artifact_id>, dataType } }
 
 6. Frontend: outputCallback(nodeId, output)
@@ -320,6 +322,8 @@ When a user clicks the play button on a node, the following sequence occurs:
 7. ProvenanceProvider.recordExecution()
    POST /nodeExecProv — records timestamps, types, source
 ```
+
+**JavaScript execution detail:** `JS_COMPUTATION` nodes call `JavaScriptInterpreter.interpretCode()` which posts to `/processJavaScriptCode`. The sandbox's `/execJs` endpoint calls `execute_js_code()`, which writes a temp `.js` file wrapping user code in an async function, spawns `node <file>` as a subprocess, reads the return value from a second temp file, and saves it to DuckDB. No separate Node.js server is needed — the Node subprocess is per-request and fully isolated.
 
 ### The Python Wrapper
 
@@ -420,7 +424,8 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/live` | GET | Health check |
-| `/processPythonCode` | POST | Execute node code (proxies to sandbox) |
+| `/processPythonCode` | POST | Execute Python node code (proxies to sandbox `/exec`) |
+| `/processJavaScriptCode` | POST | Execute JS node code via Node.js subprocess (proxies to sandbox `/execJs`) |
 | `/upload` | POST | Upload a file to `.curio/data/` |
 | `/get` | GET | Download a data file by name |
 | `/get-preview` | GET | Download first 100 rows of a data file |
@@ -485,7 +490,7 @@ The backend is a Flask application in `utk_curio/backend/`. All routes are defin
 
 | File | Purpose |
 |---|---|
-| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/install`, `/upload`) |
+| `sandbox/app/api.py` | Sandbox REST endpoints (`/exec`, `/execJs`, `/install`, `/upload`) |
 | `sandbox/python_wrapper.txt` | Execution wrapper template for user code |
 | `sandbox/util/db.py` | DuckDB connection, path resolution, and `artifacts` table initialization |
 | `sandbox/util/parsers.py` | `save_to_duckdb`, `load_from_duckdb`, `detect_kind`, and type validation |

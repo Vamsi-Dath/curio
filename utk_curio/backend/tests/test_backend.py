@@ -1,3 +1,4 @@
+import shutil
 import unittest
 import tempfile
 import os
@@ -85,6 +86,21 @@ class TestRoutes(unittest.TestCase):
 
         response = self.client.post('/processPythonCode', json=test_code)
         self.assertEqual(response.status_code, 200)
+
+    @_SKIP_AUTH
+    @unittest.skipIf(shutil.which('node') is None, "Node.js is not installed")
+    def test_process_javascript_code_no_input(self):
+        """Basic JS execution with no upstream input via /processJavaScriptCode."""
+        response = self.client.post('/processJavaScriptCode', json={
+            "code": "return 42;",
+            "nodeType": "JS_COMPUTATION",
+            "input": {},
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertIn('output', data)
+        self.assertIn('stdout', data)
+        self.assertIn('stderr', data)
 
     def test_db(self):
         response = self.client.get('/checkDB')

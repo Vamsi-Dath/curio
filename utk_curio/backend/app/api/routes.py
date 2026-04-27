@@ -647,6 +647,73 @@ def process_python_code():
     return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
 
 
+@bp.route('/processJavaScriptCode', methods=['POST'])
+@require_auth
+def process_javascript_code():
+    import time as _time
+    t0 = _time.perf_counter()
+
+    code = request.json['code']
+    nodeType = request.json['nodeType']
+    input = {'path': "", 'dataType': ""}
+    if request.json.get('input'):
+        req_input = request.json['input']
+        if req_input['dataType'] == 'outputs' and 'data' in req_input:
+            input['path'] = req_input['data']
+            input['dataType'] = 'outputs'
+        elif 'filename' in req_input:
+            input['path'] = req_input['filename']
+            input['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+        elif 'path' in req_input:
+            input['path'] = req_input['path']
+            input['dataType'] = req_input['dataType'] if req_input['dataType'] != 'outputs' else 'file'
+
+    session_id = get_current_token()
+    t1 = _time.perf_counter()
+    response = _sandbox_session.post(
+        api_address + ":" + str(api_port) + "/execJs",
+        data=json.dumps({
+            "code": code,
+            "file_path": input['path'],
+            "nodeType": nodeType,
+            "dataType": input['dataType'],
+            "session_id": session_id,
+        }),
+        headers={"Content-Type": "application/json"},
+        timeout=120,
+    )
+    t2 = _time.perf_counter()
+
+    try:
+        response_json = response.json()
+    except Exception as e:
+        print(f"[processJavaScriptCode] sandbox /execJs returned non-JSON: "
+              f"status={response.status_code} "
+              f"body={response.text[:500]!r}", flush=True)
+        return {
+            'stdout': '',
+            'stderr': f'Sandbox error: {e}',
+            'input': input,
+            'output': {}
+        }, 500
+
+    stdout = response_json['stdout']
+    stderr = response_json['stderr']
+    output = response_json['output']
+
+    t3 = _time.perf_counter()
+    print(
+        f"[backend /processJavaScriptCode] parse={t1-t0:.3f}s"
+        f"  sandbox_rtt={t2-t1:.3f}s"
+        f"  json={t3-t2:.3f}s"
+        f"  total={t3-t0:.3f}s"
+        f"  node={nodeType}",
+        flush=True,
+    )
+
+    return {'stdout': stdout, 'stderr': stderr, 'input': input, 'output': output}
+
+
 @bp.route('/installPackages', methods=['POST'])
 @require_auth
 def install_packages():

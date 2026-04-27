@@ -66,7 +66,6 @@ export default function UpMenu({
         projectSavedAt,
         cleanCanvas,
         saveCurrentProject,
-        saveAsNewProject,
         discardProject,
         packages,
         nodes,
@@ -164,17 +163,23 @@ export default function UpMenu({
         setActiveMenu(null);
     };
 
-    const handleSaveAs = async () => {
-        const name = window.prompt("Project name:", workflowNameRef.current);
-        if (!name) return;
-
-        setSaving(true);
-        try {
-            await saveAsNewProject(name);
-        } catch (err) {
-            console.error("Save As failed:", err);
-        }
-        setSaving(false);
+    const handleSaveAs = () => {
+        const trillSpec = TrillGenerator.generateTrill(
+            nodes,
+            edges,
+            workflowNameRef.current,
+            "",
+            packages,
+        );
+        const content = JSON.stringify(trillSpec, null, 2);
+        const url = URL.createObjectURL(new Blob([content], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${workflowNameRef.current}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
         setActiveMenu(null);
     };
 

@@ -8,6 +8,9 @@ cached imports — no subprocess spawning, no IPC overhead.
 Thread safety: _exec_lock serializes calls because contextlib.redirect_stdout
 mutates the global sys.stdout, and os.chdir is process-wide. Both are restored
 after each call via a finally block. For a single-user tool this is acceptable.
+
+execute_js_code() runs JavaScript via a Node.js subprocess. No lock is needed
+because each call is fully isolated in a child process.
 """
 
 import threading
@@ -168,3 +171,136 @@ def execute_code(code, file_path, node_type, data_type, launch_dir=None, session
             'stderr': captured_stderr.getvalue(),
             'output': result,
         }
+
+
+def _serialize_for_js(obj) -> str:
+    """Serialize a Python object to a JSON string suitable for embedding in a JS literal."""
+    import json
+    import pandas as pd
+    import geopandas as gpd
+
+    if obj is None or obj == '':
+        return 'null'
+    if isinstance(obj, gpd.GeoDataFrame):
+        return obj.to_json()
+    if isinstance(obj, pd.DataFrame):
+        return json.dumps(obj.to_dict(orient='records'))
+    try:
+        return json.dumps(obj)
+    except (TypeError, ValueError):
+        return json.dumps(str(obj))
+
+
+def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, session_id=None):
+    """
+    Execute user JavaScript code in an isolated Node.js subprocess.
+
+    User code is the body of `async function(arg) { <code> }`. Input is loaded
+    from DuckDB, serialized to JSON, and passed as `arg`. The return value is
+    saved back to DuckDB.
+
+    Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
+    """
+    import json
+    import os
+    import subprocess
+    import tempfile
+    import time
+    import traceback
+
+    load_from_duckdb = _globals_cache['load_from_duckdb']
+    save_to_duckdb   = _globals_cache['save_to_duckdb']
+    detect_kind      = _globals_cache['detect_kind']
+
+    t0 = time.perf_counter()
+    script_path = None
+    result_path = None
+
+    try:
+        # Load input from DuckDB.
+        input_data = None
+        if data_type == 'outputs' and file_path:
+            file_path_list = eval(file_path, {'__builtins__': {}})
+            input_data = [load_from_duckdb(elem['path'], session_id=session_id) for elem in file_path_list]
+        elif file_path:
+            input_data = load_from_duckdb(file_path, session_id=session_id)
+
+        input_json = _serialize_for_js(input_data)
+
+        # Write temp files for the script and its result.
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as tf:
+            script_path = tf.name
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as rf:
+            result_path = rf.name
+
+        # Indent user code for the async function body.
+        indented = '\n'.join('    ' + line for line in code.splitlines())
+
+        result_path_escaped = result_path.replace('\\', '\\\\')
+        wrapper = (
+            f"const arg = {input_json};\n"
+            f"const __resultFile = {json.dumps(result_path)};\n"
+            "const fs = require('fs');\n"
+            "const __logs = [];\n"
+            "const __origLog = console.log;\n"
+            "console.log = (...args) => {\n"
+            "  __logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));\n"
+            "  __origLog(...args);\n"
+            "};\n"
+            "(async () => {\n"
+            "  try {\n"
+            "    const __result = await (async function(arg) {\n"
+            f"{indented}\n"
+            "    })(arg);\n"
+            "    fs.writeFileSync(__resultFile, JSON.stringify({success: true, result: __result, logs: __logs}));\n"
+            "  } catch(e) {\n"
+            "    fs.writeFileSync(__resultFile, JSON.stringify({success: false, error: e.message + '\\n' + (e.stack || ''), logs: __logs}));\n"
+            "  }\n"
+            "})();\n"
+        )
+
+        with open(script_path, 'w', encoding='utf-8') as f:
+            f.write(wrapper)
+
+        proc = subprocess.run(
+            ['node', script_path],
+            capture_output=True, text=True, timeout=30,
+            cwd=launch_dir or os.getcwd(),
+        )
+
+        with open(result_path, 'r', encoding='utf-8') as f:
+            run_result = json.load(f)
+
+        t1 = time.perf_counter()
+        print(f"[execJs] total={t1-t0:.3f}s  node={node_type}", file=__import__('sys').__stderr__, flush=True)
+
+        if not run_result.get('success'):
+            return {
+                'stdout': run_result.get('logs', []),
+                'stderr': run_result.get('error', 'Unknown JavaScript error'),
+                'output': {'path': '', 'dataType': 'str'},
+            }
+
+        js_result = run_result['result']
+        result_artifact = save_to_duckdb(js_result, node_id=node_type, session_id=session_id)
+        out_kind = detect_kind(js_result)
+
+        return {
+            'stdout': run_result.get('logs', []),
+            'stderr': proc.stderr or '',
+            'output': {'path': result_artifact, 'dataType': out_kind},
+        }
+
+    except subprocess.TimeoutExpired:
+        return {'stdout': [], 'stderr': 'JavaScript execution timed out (30 s)', 'output': {'path': '', 'dataType': 'str'}}
+    except FileNotFoundError:
+        return {'stdout': [], 'stderr': 'Node.js not found. Please install Node.js to use JS Computation nodes.', 'output': {'path': '', 'dataType': 'str'}}
+    except Exception:
+        return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
+    finally:
+        for p in (script_path, result_path):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass

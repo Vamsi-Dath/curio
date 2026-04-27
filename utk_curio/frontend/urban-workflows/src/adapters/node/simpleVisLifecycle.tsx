@@ -35,6 +35,15 @@ function buildTableRows(parsedOutput: ICodeDataContent): any[] {
 
 type SimpleVisMode = 'table' | 'image' | 'text';
 
+function toDisplayString(input: any): string {
+  const value = input?.data !== undefined ? input.data : input;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function getMode(input: any): SimpleVisMode {
   const dt = input?.dataType;
   if (dt === 'dataframe' || dt === 'geodataframe') {
@@ -52,6 +61,7 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
   const [outputTable, setOutputTable] = useState<any[]>([]);
   const [images, setImages] = useState<string[]>([]);
   const [interacted, setInteracted] = useState<string[]>([]);
+  const [textContent, setTextContent] = useState<string>('');
   const [interactions, _setInteractions] = useState<any>({});
   const interactionsRef = useRef(interactions);
   const dataInputBypass = useRef(false);
@@ -91,7 +101,9 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
       const mode = getMode(parsedInput);
       setCurrentMode(mode);
 
-      if (mode === 'image') {
+      if (mode === 'text') {
+        setTextContent(toDisplayString(parsedInput));
+      } else if (mode === 'image') {
         if (!parsedInput.data?.image_id || !parsedInput.data?.image_content) {
           showToast("Image needs a DataFrame with 'image_id' and 'image_content' columns.", 'error');
           return;
@@ -146,6 +158,12 @@ export const useSimpleVisLifecycle: NodeLifecycleHook = (data, nodeState) => {
         interacted={interacted}
         onClickImage={clickImage}
       />
+    );
+  } else if (currentMode === 'text' && textContent) {
+    contentComponent = (
+      <pre style={{ margin: 0, padding: '8px', fontSize: '12px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+        {textContent}
+      </pre>
     );
   }
 

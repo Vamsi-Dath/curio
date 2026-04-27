@@ -5,11 +5,13 @@ import { v4 as uuid } from "uuid";
 import { IInteraction, useFlowContext } from "../providers/FlowProvider";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { PythonInterpreter } from "../PythonInterpreter";
+import { JavaScriptInterpreter } from "../JavaScriptInterpreter";
 import { TrillGenerator } from "../TrillGenerator";
 import { usePosition } from "./usePosition";
 import { AccessLevelType, NodeType, EdgeType } from "../constants";
 
 const pythonInterpreter = new PythonInterpreter();
+const jsInterpreter = new JavaScriptInterpreter();
 
 type CreateCodeNodeOptions = {
     nodeId?: string;
@@ -241,6 +243,7 @@ export function useCode(): IUseCode {
             data: {
                 nodeId: nodeId,
                 pythonInterpreter: pythonInterpreter,
+                jsInterpreter: jsInterpreter,
                 defaultCode: code,
                 description,
                 templateId,

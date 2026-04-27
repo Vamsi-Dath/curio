@@ -394,7 +394,41 @@ def prepare_backend_database(force=False):
         log_info(f"[Backend] Database already exists. Skipping initialization.", COLOR_BACKEND, 0)
     
 
+def _kill_port(port: int) -> None:
+    """Kill any process occupying `port` so the backend can bind (cross-platform)."""
+    import re, signal as _signal
+    try:
+        if platform.system() == "Windows":
+            out = subprocess.check_output(
+                ["netstat", "-ano"], text=True, stderr=subprocess.DEVNULL
+            )
+            for line in out.splitlines():
+                if f":{port} " in line and "LISTENING" in line:
+                    m = re.search(r"\s+(\d+)\s*$", line)
+                    if m:
+                        pid = int(m.group(1))
+                        log_warning(f"[Backend] Port {port} in use by PID {pid}. Terminating stale process.")
+                        subprocess.run(
+                            ["taskkill", "/F", "/PID", str(pid)],
+                            capture_output=True,
+                        )
+        else:
+            out = subprocess.check_output(
+                ["lsof", "-t", f"-i:{port}"], text=True, stderr=subprocess.DEVNULL
+            )
+            for pid_str in out.strip().splitlines():
+                pid = int(pid_str.strip())
+                if pid:
+                    log_warning(f"[Backend] Port {port} in use by PID {pid}. Terminating stale process.")
+                    os.kill(pid, _signal.SIGTERM)
+    except subprocess.CalledProcessError:
+        pass
+    except Exception as e:
+        log_warning(f"[Backend] Could not check port {port}: {e}")
+
+
 def start_backend(host, port, force_db_init=False, no_server=False):
+    _kill_port(int(port))
     log_info(f"Starting backend on {host}:{port}...", COLOR_BACKEND, 0)
 
     prepare_backend_database(force=force_db_init)
@@ -423,6 +457,7 @@ def start_backend(host, port, force_db_init=False, no_server=False):
 
 
 def start_sandbox(host, port):
+    _kill_port(int(port))
     log_info(f"Starting sandbox on {host}:{port}...", COLOR_SANDBOX, 0)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))

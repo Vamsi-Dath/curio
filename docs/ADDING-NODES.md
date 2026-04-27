@@ -26,7 +26,7 @@ Every node in Curio is defined by two collaborating objects:
 
 A single React component, `UniversalNode.tsx`, renders **all** node types by reading the descriptor at render time. You never write a new React component for a new node type.
 
-Data execution happens in the Python sandbox. The frontend sends the node's code to `POST /processPythonCode`; the sandbox wraps it in `python_wrapper.txt`, executes it, and returns the output as a memory-mapped file.
+Data execution happens in the sandbox. For Python nodes the frontend sends code to `POST /processPythonCode`; the sandbox wraps it in `python_wrapper.txt` and executes it in-process. For JavaScript nodes the frontend sends code to `POST /processJavaScriptCode`; the sandbox spawns a `node` subprocess per request.
 
 ```
 Frontend (UniversalNode)
@@ -36,9 +36,11 @@ NodeDescriptor ──► NodeAdapter ──► useLifecycle hook
                                         │
                                         ▼
                               NodeEditor (code / grammar / widgets)
-                                        │  POST /processPythonCode
-                                        ▼
-                              Flask backend ──► Sandbox (Python)
+                                        │
+                          ┌─────────────┴──────────────┐
+                          │  POST /processPythonCode    │  POST /processJavaScriptCode
+                          ▼  (Python nodes)             ▼  (JavaScript nodes)
+                   Flask backend ──► Sandbox /exec   Sandbox /execJs → node subprocess
                                         │
                                         ▼
                               outputCallback ──► downstream nodes
@@ -258,6 +260,67 @@ The template will appear automatically in the "Load Template" modal when a user 
 
 ---
 
+---
+
+## JavaScript nodes
+
+JavaScript nodes (`JS_COMPUTATION`) follow the same registry-based pattern but differ from Python nodes in a few ways.
+
+### What's the same
+
+- Add `NodeType.JS_COMPUTATION` to the enum — Steps 1–4 are identical.
+- Use `useCodeNodeLifecycle` as the lifecycle hook (no new lifecycle needed).
+- `UniversalNode.tsx` renders JS nodes exactly like Python nodes.
+
+### What's different
+
+| Aspect | Python nodes | JavaScript nodes |
+|--------|-------------|-----------------|
+| Backend endpoint | `POST /processPythonCode` | `POST /processJavaScriptCode` |
+| Sandbox endpoint | `POST /exec` (in-process `exec()`) | `POST /execJs` (Node.js subprocess) |
+| Code wrapper | `python_wrapper.txt` | Inline async function in temp `.js` file |
+| Monaco language | `python` | `javascript` (set automatically for `JS_COMPUTATION`) |
+| Descriptor icon | `@fortawesome/free-solid-svg-icons` | `@fortawesome/free-brands-svg-icons` (`faJs`) |
+| `hasWidgets` | typically `true` | `false` (widget markers not supported in JS yet) |
+| Template files | `.py` files under `templates/<type>/` | Not yet supported |
+
+### Descriptor example
+
+```ts
+import { faJs } from '@fortawesome/free-brands-svg-icons';
+
+registerNode({
+  id: NodeType.JS_COMPUTATION,
+  category: 'computation',
+  label: 'JS Computation',
+  icon: faJs,
+  inputPorts: [{ types: ALL_TYPES, cardinality: '[0,1]' }],
+  outputPorts: [{ types: ALL_TYPES, cardinality: '[0,1]' }],
+  editor: 'code',
+  inPalette: true,
+  paletteOrder: 11,
+  description: '...',
+  hasCode: true,
+  hasWidgets: false,   // ← must be false for JS nodes
+  hasGrammar: false,
+  adapter: {
+    handles: standardInOut(),
+    editor: { code: true, grammar: false, widgets: false },
+    container: { handleType: 'in/out' },
+    useLifecycle: useCodeNodeLifecycle,
+  },
+});
+```
+
+### User code conventions
+
+- `arg` receives the input value from the upstream node (or `null` if none).
+- Use `return` to pass the output downstream — there is no `print()` equivalent.
+- `console.log(...)` output is captured and shown in the node's output panel.
+- `require()` is not available — no npm module imports.
+
+---
+
 ## Checklist
 
 Use this checklist when adding any new node:
@@ -267,4 +330,5 @@ Use this checklist when adding any new node:
 - [ ] Hook exported from `src/adapters/node/index.ts`
 - [ ] Icon imported and `registerNode()` called in `src/registry/descriptors.ts`
 - [ ] Entry added to `_node_type_registry` in `utk_curio/backend/app/api/routes.py`
-- [ ] Template file(s) added under `templates/<node_type_lower>/`
+- [ ] *(Python nodes only)* Template file(s) added under `templates/<node_type_lower>/`
+- [ ] *(JS nodes only)* Icon from `@fortawesome/free-brands-svg-icons`; `hasWidgets: false` in descriptor

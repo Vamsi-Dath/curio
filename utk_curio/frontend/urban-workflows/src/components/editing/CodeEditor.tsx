@@ -95,7 +95,10 @@ function CodeEditor({
             setOutputCallback({ code: "error", content: "No code to execute" });
             return;
         }
-        data.pythonInterpreter.interpretCode(
+        const interpreter = (nodeType === NodeType.JS_COMPUTATION && data.jsInterpreter)
+            ? data.jsInterpreter
+            : data.pythonInterpreter;
+        interpreter.interpretCode(
             code,
             replacedCode,
             data.input,
@@ -151,7 +154,7 @@ function CodeEditor({
             <div style={{ flex: 2, minHeight: 0 }}>
                 <Editor
                     height="100%"
-                    language="python"
+                    language={nodeType === NodeType.JS_COMPUTATION ? "javascript" : "python"}
                     theme="vs"
                     value={code}
                     onChange={handleCodeChange}

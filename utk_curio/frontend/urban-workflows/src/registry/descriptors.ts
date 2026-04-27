@@ -15,6 +15,7 @@ import {
   faCopy,
   faRectangleList,
 } from '@fortawesome/free-solid-svg-icons';
+import { faJs } from '@fortawesome/free-brands-svg-icons';
 
 import { registerNode } from './nodeRegistry';
 
@@ -231,6 +232,31 @@ registerNode({
     container: { handleType: 'in/out' },
     outputIconType: '1',
     showTemplateModal: true,
+    useLifecycle: useCodeNodeLifecycle,
+  },
+});
+
+registerNode({
+  id: NodeType.JS_COMPUTATION,
+  category: 'computation',
+  label: 'JS Computation',
+  icon: faJs,
+  inputPorts: [{ types: ALL_TYPES, cardinality: '[0,1]' }],
+  outputPorts: [{ types: ALL_TYPES, cardinality: '[0,1]' }],
+  editor: 'code',
+  inPalette: true,
+  paletteOrder: 11,
+  description: 'Run JavaScript via Node.js. Input from the previous node is available as `arg`. Use `return` to pass output downstream.',
+  hasCode: true,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: standardInOut(),
+    editor: { code: true, grammar: false, widgets: true },
+    container: { handleType: 'in/out', disablePlay: false },
+    inputIconType: '1',
+    outputIconType: '1',
+    showTemplateModal: false,
     useLifecycle: useCodeNodeLifecycle,
   },
 });
