@@ -1,6 +1,8 @@
 import { JavaScriptInterpreter } from '../JavaScriptInterpreter';
 import { NodeType } from '../constants';
 
+const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+
 process.env.BACKEND_URL = 'http://localhost:5002';
 
 jest.mock('../utils/authApi', () => ({
@@ -49,7 +51,7 @@ describe('JavaScriptInterpreter', () => {
             mockNodeExecProv,
         );
 
-        await new Promise(setImmediate);
+        await flushPromises();
 
         expect(global.fetch).toHaveBeenCalledTimes(1);
         const [url] = (global.fetch as jest.Mock).mock.calls[0];
@@ -77,7 +79,7 @@ describe('JavaScriptInterpreter', () => {
             NodeType.JS_COMPUTATION, 'node-1', 'wf', mockNodeExecProv,
         );
 
-        await new Promise(setImmediate);
+        await flushPromises();
 
         expect(callback).toHaveBeenCalledWith(fakeResponse);
     });
@@ -92,7 +94,7 @@ describe('JavaScriptInterpreter', () => {
             NodeType.JS_COMPUTATION, 'node-1', 'wf', mockNodeExecProv,
         );
 
-        await new Promise(setImmediate);
+        await flushPromises();
 
         expect(callback).toHaveBeenCalledWith(expect.objectContaining({
             stderr: expect.stringContaining('Network error'),
@@ -116,7 +118,7 @@ describe('JavaScriptInterpreter', () => {
             NodeType.JS_COMPUTATION, 'node-1', 'wf', mockNodeExecProv,
         );
 
-        await new Promise(setImmediate);
+        await flushPromises();
 
         const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
         expect(body.code).toBe(userCode);

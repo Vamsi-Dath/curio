@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import DataPoolContent from '../../../../adapters/node/components/DataPoolContent';
 import { fetchPreviewData } from '../../../../services/api';
 
@@ -64,6 +64,7 @@ describe('DataPoolContent', () => {
     );
 
     await waitFor(() => expect(mockFetchPreviewData).toHaveBeenCalledWith('artifact_id'));
+    await act(async () => {}); // flush state updates from resolved preview fetch
     expect(screen.getAllByText('Alice').length).toBeGreaterThanOrEqual(1);
   });
 });
