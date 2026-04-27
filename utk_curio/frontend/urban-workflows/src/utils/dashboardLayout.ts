@@ -7,6 +7,55 @@ interface NodeWithPosition extends Node {
 const NODE_WIDTH = 200;
 // Distance between nodes in the dashboard layout
 const DASHBOARD_SPACING = 450;
+const START_Y = 50;
+const V_GAP = 20;
+const DEFAULT_NODE_HEIGHT = 350;
+
+// Returns pinned node IDs grouped by BFS distance from root(s), ordered left-to-right.
+// Each inner array is one column; nodes within a column are sorted by their original Y position.
+export function getPinnedNodeColumns(
+  nodes: Node[],
+  edges: Edge[],
+  dashboardPins: { [key: string]: boolean }
+): string[][] {
+  const pinnedNodes = nodes.filter(node => dashboardPins[node.id]);
+  if (!pinnedNodes.length) return [];
+
+  const adjacencyMap = new Map<string, string[]>();
+  nodes.forEach(node => adjacencyMap.set(node.id, []));
+  edges.forEach(edge => adjacencyMap.get(edge.source)?.push(edge.target));
+
+  const rootNodes = nodes.filter(
+    node => !edges.some(edge => edge.target === node.id) && dashboardPins[node.id]
+  );
+
+  const pinnedDistances = new Map<string, number>();
+  const calculateDistances = (nodeId: string, distance: number, visited: Set<string>) => {
+    if (visited.has(nodeId)) return;
+    visited.add(nodeId);
+    if (dashboardPins[nodeId] && !pinnedDistances.has(nodeId)) {
+      pinnedDistances.set(nodeId, distance);
+    }
+    const neighbors = adjacencyMap.get(nodeId) || [];
+    const nextDistance = dashboardPins[nodeId] ? distance + 1 : distance;
+    neighbors.forEach(neighborId => calculateDistances(neighborId, nextDistance, visited));
+  };
+  rootNodes.forEach(rootNode => calculateDistances(rootNode.id, 0, new Set<string>()));
+
+  const distanceGroups = new Map<number, NodeWithPosition[]>();
+  pinnedNodes.forEach(node => {
+    const distance = pinnedDistances.get(node.id) ?? 0;
+    if (!distanceGroups.has(distance)) distanceGroups.set(distance, []);
+    distanceGroups.get(distance)?.push(node as NodeWithPosition);
+  });
+
+  const sortedDistances = Array.from(distanceGroups.keys()).sort((a, b) => a - b);
+  return sortedDistances.map(distance => {
+    const group = distanceGroups.get(distance) ?? [];
+    group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
+    return group.map(n => n.id);
+  });
+}
 
 // Function to apply a dashboard layout to nodes based on their pinned status
 // Pinned nodes are arranged in a grid-like structure based on their distances from root nodes
@@ -54,8 +103,18 @@ export function applyDashboardLayout(
     const baseX = Math.min(...pinnedNodes.map(n => n.position.x));
     Array.from(distanceGroups.keys()).sort((a, b) => a - b).forEach(distance => {
       const currentX = baseX + distance * (NODE_WIDTH + DASHBOARD_SPACING);
-      distanceGroups.get(distance)?.forEach(node => {
-        updatedNodes.push({ ...node, position: { x: currentX, y: node.position.y } });
+      const group = distanceGroups.get(distance) ?? [];
+      // Sort column by original Y for consistent ordering
+      group.sort((a, b) => (a.position?.y ?? 0) - (b.position?.y ?? 0));
+      group.forEach((node, nodeIndex) => {
+        // If node has a saved dashboard position, use it; otherwise auto-layout
+        if (typeof node.data?.dashboardX === "number") {
+          updatedNodes.push({ ...node, position: { x: node.data.dashboardX, y: node.data.dashboardY } });
+        } else {
+          const nodeH = node.data?.dashboardHeight ?? node.data?.nodeHeight ?? DEFAULT_NODE_HEIGHT;
+          const y = START_Y + nodeIndex * (nodeH + V_GAP);
+          updatedNodes.push({ ...node, position: { x: currentX, y } });
+        }
       });
     });
   }

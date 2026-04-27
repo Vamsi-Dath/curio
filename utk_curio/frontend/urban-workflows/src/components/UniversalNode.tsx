@@ -29,7 +29,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
   const showLoading = lifecycle.showLoading ?? false;
   const disablePlay = lifecycle.disablePlay ?? adapter.container.disablePlay ?? false;
 
-  const { signalNodeExecDone } = useFlowContext();
+  const { signalNodeExecDone, dashboardOn } = useFlowContext();
   const lastTriggerExecRef = useRef<number>(data.triggerExec ?? 0);
   const outputCodeRef = useRef(output?.code);
 
@@ -70,7 +70,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
 
   return (
     <>
-      {allHandles.map((h: HandleDef) => {
+      {!dashboardOn && allHandles.map((h: HandleDef) => {
         const connectable =
           h.isConnectableOverride
             ? h.isConnectableOverride(data, isConnectable, edges)
@@ -109,7 +109,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
         setTemplateConfig={adapter.showTemplateModal ? nodeState.setTemplateConfig : undefined}
         promptDescription={nodeState.promptDescription}
       >
-        {adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
+        {!dashboardOn && adapter.inputIconType && <InputIcon type={adapter.inputIconType as TIconCardinality} />}
 
         <DescriptionModal
           nodeId={data.nodeId}
@@ -156,7 +156,7 @@ const UniversalNode = React.memo(function UniversalNode({ data, isConnectable }:
           />
         )}
 
-        {adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
+        {!dashboardOn && adapter.outputIconType && <OutputIcon type={adapter.outputIconType as TIconCardinality} />}
       </NodeContainer>
     </>
   );

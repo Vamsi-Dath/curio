@@ -71,6 +71,9 @@ interface FlowContextProps {
     onNodesDelete: (changes: NodeChange[]) => void;
     setPinForDashboard: (nodeId: string, value: boolean) => void;
     setDashBoardMode: (value: boolean) => void;
+    dashboardOn: boolean;
+    dashboardLocked: boolean;
+    setDashboardLocked: React.Dispatch<React.SetStateAction<boolean>>;
     updatePositionWorkflow: (nodeId: string, position: any) => void;
     updatePositionDashboard: (nodeId: string, position: any) => void;
     applyNewOutput: (output: IOutput) => void;
@@ -174,6 +177,9 @@ export const FlowContext = createContext<FlowContextProps>({
     onNodesDelete: () => { },
     setPinForDashboard: () => { },
     setDashBoardMode: () => { },
+    dashboardOn: false,
+    dashboardLocked: true,
+    setDashboardLocked: () => { },
     updatePositionWorkflow: () => { },
     updatePositionDashboard: () => { },
     applyNewOutput: () => { },
@@ -290,6 +296,8 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     const [interactions, setInteractions] = useState<IInteraction[]>([]);
 
     const [dashboardPins, setDashboardPins] = useState<any>({}); // {[nodeId] -> boolean}
+    const [dashboardOn, setDashboardOn] = useState<boolean>(false);
+    const [dashboardLocked, setDashboardLocked] = useState<boolean>(true);
 
     const positionsInDashboardRef = useRef<any>({});
     const setPositionsInDashboard = (data: any) => {
@@ -332,16 +340,11 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
     }, []);
 
     const setDashBoardMode = (value: boolean) => {
+        setDashboardOn(value);
         if (value) {
+            setDashboardLocked(true);
             // When entering dashboard mode, apply the automatic layout
             setNodes((nds) => {
-                console.log('Current nodes before dashboard layout:', nds.map(n => ({
-                    id: n.id,
-                    type: n.type,
-                    position: n.position,
-                    pinned: dashboardPins[n.id]
-                })));
-
                 // Save current positions as workflow positions if not already set
                 const nodesWithWorkflowPositions = nds.map(node => ({
                     ...node,
@@ -351,47 +354,38 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
                     },
                 }));
 
-                console.log('Applying dashboard layout to nodes:', nodesWithWorkflowPositions.length);
-                console.log('Dashboard pins:', dashboardPins);
-
                 const updatedNodes = applyDashboardLayout(nodesWithWorkflowPositions, edges, dashboardPins);
-
-                console.log('Updated nodes after layout:', updatedNodes.map(n => ({
-                    id: n.id,
-                    type: n.type,
-                    position: n.position,
-                    data: n.data
-                })));
 
                 // Update positions in the dashboard state
                 updatedNodes.forEach((node) => {
                     if (dashboardPins[node.id]) {
-                        console.log(`Updating dashboard position for node ${node.id}:`, node.position);
                         updatePositionDashboard(node.id, node.position);
                     }
                 });
 
-                return updatedNodes;
+                return updatedNodes.map(node => ({
+                    ...node,
+                    style: dashboardPins[node.id] ? node.style : { display: 'none' },
+                }));
             });
+            setEdges(eds => eds.map(e => ({ ...e, hidden: true })));
         } else {
             // When exiting dashboard mode, reset to workflow positions
             setNodes((nds) => {
-                const resetNodes = nds.map(node => {
+                return nds.map(node => {
                     const workflowPos = node.data.workflowPosition || node.position;
-                    console.log(`Resetting node ${node.id} to workflow position:`, workflowPos);
                     return {
                         ...node,
+                        style: undefined,
                         position: workflowPos,
                         data: {
                             ...node.data,
-                            // Clear temporary dashboard position
                             dashboardPosition: undefined,
                         },
                     };
                 });
-                console.log('Nodes after reset:', resetNodes);
-                return resetNodes;
             });
+            setEdges(eds => eds.map(e => ({ ...e, hidden: false })));
         }
     };
 
@@ -405,7 +399,10 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
     const setPinForDashboard = useCallback((nodeId: string, value: boolean) => {
         setDashboardPins((prev: any) => ({ ...prev, [nodeId]: value }));
-    }, [setDashboardPins]);
+        setNodes((nds: Node[]) =>
+            nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, dashboardPinned: value } } : n)
+        );
+    }, [setDashboardPins, setNodes]);
 
     const addNode = useCallback(
         (node: Node, customWorkflowName?: string, provenance?: boolean) => {
@@ -1095,6 +1092,9 @@ const FlowProvider = ({ children }: { children: ReactNode }) => {
 
                 // NEW CODE
                 dashboardPins,
+                dashboardOn,
+                dashboardLocked,
+                setDashboardLocked,
                 workflowNameRef,
                 setWorkflowName,
                 loading,

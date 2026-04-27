@@ -221,7 +221,12 @@ export function useWorkflowOperations(deps: WorkflowOperationsDeps) {
             if (!merge) {
                 setOutputs([]);
                 setInteractions([]);
-                setDashboardPins({});
+                // Restore dashboard pins from persisted node data
+                const pins: Record<string, boolean> = {};
+                for (const node of loaded_nodes) {
+                    if (node.data?.dashboardPinned) pins[node.id] = true;
+                }
+                setDashboardPins(pins);
                 setPositionsInDashboard({});
                 setPositionsInWorkflow({});
             }

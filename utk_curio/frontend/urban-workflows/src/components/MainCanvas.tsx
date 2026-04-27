@@ -33,6 +33,7 @@ import html2canvas from "html2canvas";
 
 import FloatingPanel from "./FloatingPanel";
 import WorkflowGoal from "./menus/top/WorkflowGoal";
+import { DashboardPanel } from "./DashboardPanel";
 
 const CANVAS_EXTENT: [[number, number], [number, number]] = [[-2000, -2000], [6000, 6000]];
 
@@ -91,7 +92,7 @@ export function MainCanvas() {
 
     const { onContextMenu, showMenu, menuPosition } = useRightClickMenu();
     const { createCodeNode } = useCode();
-    const { openAIRequest, AIModeRef, setAIMode } = useLLMContext();
+    const { llmRequest, AIModeRef, setAIMode } = useLLMContext();
 
     const nodeTypes = useMemo(() => {
         const types: Record<string, any> = {};
@@ -109,7 +110,7 @@ export function MainCanvas() {
     }), []);
 
     const reactFlow = useReactFlow();
-    const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition} = useReactFlow();
+    const {getZoom, getViewport, setViewport, setCenter, screenToFlowPosition, fitView} = useReactFlow();
 
     // Test hook: expose the ReactFlow instance so Playwright can force a
     // deterministic viewport (e.g. fitView with duration: 0) before taking
@@ -128,13 +129,32 @@ export function MainCanvas() {
         setDashBoardMode,
         updatePositionWorkflow,
         updatePositionDashboard,
+        updateDataNode,
         workflowNameRef,
-        workflowGoal
+        workflowGoal,
+        dashboardOn,
+        dashboardLocked,
+        dashboardPins,
     } = useFlowContext();
 
     // Refs used inside callbacks so the callbacks don't need to list them as deps
     const selectedEdgeIdRef = useRef<string>("");
     const dashboardOnRef = useRef<boolean>(false);
+    const savedViewportRef = useRef<{ x: number; y: number; zoom: number } | null>(null);
+    useEffect(() => { dashboardOnRef.current = dashboardOn; }, [dashboardOn]);
+    useEffect(() => {
+        if (dashboardOn) {
+            savedViewportRef.current = getViewport();
+            const pinnedNodes = Object.keys(dashboardPins)
+                .filter(id => dashboardPins[id])
+                .map(id => ({ id }));
+            setTimeout(() => fitView({ duration: 300, padding: 0.08, nodes: pinnedNodes }), 50);
+        } else {
+            if (savedViewportRef.current) {
+                setViewport(savedViewportRef.current, { duration: 300 });
+            }
+        }
+    }, [dashboardOn]);
 
     const [isComponentsSelected, setIsComponentsSelected] = useState<boolean>(false);
 
@@ -142,9 +162,6 @@ export function MainCanvas() {
 
     // Selecting boxes to generate explanation
     const [selectedComponents, setSelectedComponents] = useState<any>({});
-
-    const [dashboardOn, setDashboardOn] = useState<boolean>(false);
-    const { dashboardPins } = useFlowContext();
 
     const captureScreenshot = async (): Promise<string | null> => {
         const screenshotTarget = document.getElementsByClassName("react-flow__renderer")[0] as HTMLElement;
@@ -174,7 +191,7 @@ export function MainCanvas() {
 
         let text = JSON.stringify(trill_spec)
 
-        openAIRequest("default_preamble", "explanation_prompt", text).then((response: any) => {
+        llmRequest("default_preamble", "explanation_prompt", text).then((response: any) => {
             console.log("Response:", response);
 
             setFloatingPanels((prev: any) => {
@@ -203,7 +220,7 @@ export function MainCanvas() {
 
         let text = JSON.stringify(trill_spec) + "\n\n" + ""
 
-        openAIRequest("default_preamble", "debug_prompt", text).then((response: any) => {
+        llmRequest("default_preamble", "debug_prompt", text).then((response: any) => {
             console.log("Response:", response);
 
             setFloatingPanels((prev: any) => {
@@ -237,7 +254,6 @@ export function MainCanvas() {
     // Apply dashboard mode changes
     const handleDashboardToggle = useCallback((value: boolean) => {
         dashboardOnRef.current = value;
-        setDashboardOn(value);
         setDashBoardMode(value);
     }, [setDashBoardMode]);
 
@@ -282,10 +298,11 @@ export function MainCanvas() {
                 change.position != undefined &&
                 change.position.x != undefined
             ) {
-                if (dashboardOnRef.current)
+                if (dashboardOnRef.current) {
                     updatePositionDashboard(change.id, change);
-                else
+                } else {
                     updatePositionWorkflow(change.id, change);
+                }
                 dirty = true;
             }
 
@@ -296,6 +313,11 @@ export function MainCanvas() {
         onNodesDelete(allowedChanges);
         return onNodesChange(allowedChanges);
     }, [reactFlow, showToast, updatePositionDashboard, updatePositionWorkflow, onNodesDelete, onNodesChange, markDirty]);
+
+    const handleNodeDragStop = useCallback((_event: React.MouseEvent, node: any) => {
+        if (!dashboardOnRef.current) return;
+        updateDataNode(node.id, { ...node.data, dashboardX: node.position.x, dashboardY: node.position.y });
+    }, [updateDataNode]);
 
     const handleEdgesChange = useCallback((changes: EdgeChange[]) => {
         let selected = "";
@@ -357,12 +379,6 @@ export function MainCanvas() {
     //     setViewport({ x: newX, y: newY, zoom: nextZoom }, { duration: 200 });
     // };
 
-    // Filter nodes based on dashboard mode
-    const filteredNodes = useMemo(() => {
-        if (!dashboardOn) return nodes;
-        return nodes.filter(node => dashboardPins[node.id]);
-    }, [nodes, dashboardOn, dashboardPins]);
-
 
     const loadingAnimation = () => {
         return <div id="plug-loader" role="status" aria-live="polite" aria-busy="true">
@@ -402,8 +418,8 @@ export function MainCanvas() {
     return (
         <>
         {!loading ? <div
-            style={{ width: "100vw", height: "100vh", backgroundColor: "#f0f0f0" }}
-            onContextMenu={onContextMenu}
+            style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
+            onContextMenu={!dashboardOn ? onContextMenu : undefined}
             // onWheelCapture={handleWheel}
         >
             {Object.keys(floatingPanels).map((key, index) => (
@@ -415,13 +431,14 @@ export function MainCanvas() {
                     onClose={() => {deleteFloatingPanel(key)}}
                 />
             ))}
-            <ToolsMenu />
-            <UpMenu
+            {!dashboardOn && <ToolsMenu />}
+            {!dashboardOn && <UpMenu
                 setDashBoardMode={(value) => handleDashboardToggle(value)}
                 setDashboardOn={handleDashboardToggle}
                 dashboardOn={dashboardOn}
                 setAIMode={setAIMode}
-            />
+            />}
+
             <RightClickMenu
                 showMenu={showMenu}
                 menuPosition={menuPosition}
@@ -432,28 +449,37 @@ export function MainCanvas() {
                     },
                 ]}
             />
+            {dashboardOn && <DashboardPanel />}
             <ReactFlow
-                // zoomOnScroll={false}
-                nodes={filteredNodes}
+                nodes={nodes}
                 edges={edges}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
+                onDragOver={!dashboardOn ? handleDragOver : undefined}
+                onDrop={!dashboardOn ? handleDrop : undefined}
                 onNodesChange={handleNodesChange}
+                onNodeDragStop={handleNodeDragStop}
                 onEdgesChange={handleEdgesChange}
                 onEdgesDelete={handleEdgesDelete}
-                selectionKeyCode="Shift"
+                selectionKeyCode={dashboardOn ? null : "Shift"}
                 onSelectionChange={handleSelectionChange}
-                onConnect={onConnect}
+                onConnect={!dashboardOn ? onConnect : undefined}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 isValidConnection={isValidConnection}
                 connectionMode={ConnectionMode.Loose}
                 minZoom={0.05}
-                onlyRenderVisibleElements
+
                 translateExtent={CANVAS_EXTENT}
+                panOnDrag={!dashboardOn || !dashboardLocked}
+                zoomOnScroll={!dashboardOn || !dashboardLocked}
+                zoomOnPinch={!dashboardOn || !dashboardLocked}
+                zoomOnDoubleClick={!dashboardOn || !dashboardLocked}
+                nodesDraggable={!dashboardOn || !dashboardLocked}
+                elementsSelectable={!dashboardOn || !dashboardLocked}
+                nodesConnectable={!dashboardOn}
+                style={dashboardOn ? { backgroundColor: "#ffffff" } : undefined}
             >
-                <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />
-                <Controls />
+                {!dashboardOn && <Background color="#a0a0a0" variant={BackgroundVariant.Dots} gap={20} size={2} />}
+                {!dashboardOn && <Controls />}
                 {AIModeRef.current ? <WorkflowGoal /> : null}
                 {AIModeRef.current ? <LLMChat /> : null}
             </ReactFlow>
@@ -498,8 +524,8 @@ export function MainCanvas() {
             ) : null}
             <input hidden type="file" name="file" id="file" />
 
-        </div> : loadingAnimation() }     
+        </div> : loadingAnimation() }
         </>
-        
+
     );
 }

@@ -135,14 +135,30 @@ export class TrillGenerator {
 
             trill_node.id = node.data.nodeId;
             trill_node.type = node.type;
-            trill_node.x = node.position.x;
-            trill_node.y = node.position.y;
+
+            // Use workflow position so saving in dashboard mode doesn't corrupt the layout
+            const workflowPos = node.data.workflowPosition ?? node.position;
+            trill_node.x = workflowPos.x;
+            trill_node.y = workflowPos.y;
 
             if(typeof node.data.nodeWidth === "number")
                 trill_node.width = node.data.nodeWidth;
 
             if(typeof node.data.nodeHeight === "number")
                 trill_node.height = node.data.nodeHeight;
+
+            if(node.data.dashboardPinned)
+                trill_node.dashboardPinned = true;
+
+            if(typeof node.data.dashboardX === "number"){
+                trill_node.dashboardX = node.data.dashboardX;
+                trill_node.dashboardY = node.data.dashboardY;
+            }
+
+            if(typeof node.data.dashboardWidth === "number"){
+                trill_node.dashboardWidth = node.data.dashboardWidth;
+                trill_node.dashboardHeight = node.data.dashboardHeight;
+            }
 
             if(node.data.code != undefined){
                 trill_node.content = node.data.code;

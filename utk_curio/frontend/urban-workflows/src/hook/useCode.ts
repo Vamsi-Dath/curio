@@ -28,6 +28,11 @@ type CreateCodeNodeOptions = {
     keywords?: number[];
     nodeWidth?: number;
     nodeHeight?: number;
+    dashboardPinned?: boolean;
+    dashboardX?: number;
+    dashboardY?: number;
+    dashboardWidth?: number;
+    dashboardHeight?: number;
 };
 
 interface IUseCode {
@@ -131,6 +136,19 @@ export function useCode(): IUseCode {
             if(typeof parsedHeight === "number")
                 nodeMeta.nodeHeight = parsedHeight;
 
+            if(node.dashboardPinned)
+                nodeMeta.dashboardPinned = true;
+
+            if(typeof node.dashboardX === "number"){
+                nodeMeta.dashboardX = node.dashboardX;
+                nodeMeta.dashboardY = node.dashboardY;
+            }
+
+            if(typeof node.dashboardWidth === "number"){
+                nodeMeta.dashboardWidth = node.dashboardWidth;
+                nodeMeta.dashboardHeight = node.dashboardHeight;
+            }
+
             if(suggestionType != undefined)
                 nodeMeta.suggestionType = suggestionType;
 
@@ -209,6 +227,11 @@ export function useCode(): IUseCode {
             keywords = [],
             nodeWidth = undefined,
             nodeHeight = undefined,
+            dashboardPinned = undefined,
+            dashboardX = undefined,
+            dashboardY = undefined,
+            dashboardWidth = undefined,
+            dashboardHeight = undefined,
         } = options;
 
         const node: Node = {
@@ -233,6 +256,11 @@ export function useCode(): IUseCode {
                 out,
                 nodeWidth,
                 nodeHeight,
+                dashboardPinned,
+                dashboardX,
+                dashboardY,
+                dashboardWidth,
+                dashboardHeight,
                 input: "",
                 inputTypes: [],
                 keywords,
