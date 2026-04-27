@@ -474,7 +474,7 @@ export function MainCanvas() {
                 zoomOnPinch={!dashboardOn || !dashboardLocked}
                 zoomOnDoubleClick={!dashboardOn || !dashboardLocked}
                 nodesDraggable={!dashboardOn || !dashboardLocked}
-                elementsSelectable={!dashboardOn || !dashboardLocked}
+                elementsSelectable={true}
                 nodesConnectable={!dashboardOn}
                 style={dashboardOn ? { backgroundColor: "#ffffff" } : undefined}
             >
