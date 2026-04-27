@@ -1,27 +1,69 @@
 import React, { ReactNode } from "react";
 import CSS from "csstype";
 import curioLogoWhite from "assets/curio_logo_white.png";
+import urbaniteLogo from "assets/urbanite.png";
+import scoutLogo from "assets/scout.png";
+import autarkLogo from "assets/autark.png";
+import utkLogo from "assets/utk.png";
+import evlLogo from "assets/evl.png";
+import uicLogo from "assets/uic.png";
 
 interface Props {
   children: ReactNode;
 }
 
+const siblingLogos = [
+  { src: urbaniteLogo, alt: "Urbanite", href: "https://urbantk.org/urbanite", label: "urbantk.org/urbanite", filter: "grayscale(1)" },
+  { src: scoutLogo,    alt: "Scout",    href: "https://urbantk.org/scout",    label: "urbantk.org/scout",    filter: "grayscale(1)" },
+  { src: autarkLogo,   alt: "Autark",   href: "https://urbantk.org/autark",   label: "urbantk.org/autark",   filter: "brightness(0) invert(1)" },
+];
+
+const footerLogos = [
+  { src: utkLogo, alt: "UrbanTK", href: "https://urbantk.org",      filter: undefined },
+  { src: evlLogo, alt: "EVL",     href: "https://www.evl.uic.edu",  filter: "brightness(0) invert(1)" },
+  { src: uicLogo, alt: "UIC",     href: "https://www.uic.edu",      filter: "brightness(0) invert(1)" },
+];
+
 export const AuthFormWrapper: React.FC<Props> = ({ children }) => {
   return (
     <div style={outerStyle}>
       <div style={leftPanelStyle}>
-        <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center" }}>
-          <img
-            src={curioLogoWhite}
-            alt="Curio"
-            style={logoStyle}
-          />
-        </a>
-        <div style={taglineGroupStyle}>
-          <p style={taglineStyle}>Visual dataflows for urban data</p>
-          <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={urlStyle}>
-            urbantk.org/curio
+        <div style={centerContentStyle}>
+          <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={{ display: "block", textAlign: "center" }}>
+            <img src={curioLogoWhite} alt="Curio" style={logoStyle} />
           </a>
+          <div style={taglineGroupStyle}>
+            <p style={taglineStyle}>Visual dataflows for urban data</p>
+            <a href="https://urbantk.org/curio" target="_blank" rel="noreferrer" style={urlStyle}>
+              urbantk.org/curio
+            </a>
+          </div>
+          <div style={siblingRowStyle}>
+            {siblingLogos.map(({ src, alt, href, label, filter }) => (
+              <a key={alt} href={href} target="_blank" rel="noreferrer" style={siblingItemStyle}>
+                <img src={src} alt={alt} style={{ ...siblingLogoStyle, filter }} />
+                <span style={siblingUrlStyle}>{label}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+        <div style={footerStyle}>
+          <div style={footerLogosRowStyle}>
+            {footerLogos.map(({ src, alt, href, filter }) =>
+              href ? (
+                <a key={alt} href={href} target="_blank" rel="noreferrer">
+                  <img src={src} alt={alt} style={{ ...footerLogoStyle, filter }} />
+                </a>
+              ) : (
+                <img key={alt} src={src} alt={alt} style={{ ...footerLogoStyle, filter }} />
+              )
+            )}
+          </div>
+          <p style={nsfTextStyle}>
+            Supported with funding from the National Science Foundation (NSF)
+            <br />
+            Awards #2320261, #2330565, and #2411223
+          </p>
         </div>
       </div>
       <div style={rightPanelStyle}>{children}</div>
@@ -42,9 +84,17 @@ const leftPanelStyle: CSS.Properties = {
   display: "flex",
   flexDirection: "column",
   alignItems: "center",
-  justifyContent: "center",
-  gap: "28px",
+  justifyContent: "space-between",
   padding: "40px",
+};
+
+const centerContentStyle: CSS.Properties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "28px",
+  flex: 1,
+  justifyContent: "center",
 };
 
 const logoStyle: CSS.Properties = {
@@ -83,4 +133,65 @@ const rightPanelStyle: CSS.Properties = {
   alignItems: "center",
   justifyContent: "center",
   padding: "40px",
+};
+
+const siblingRowStyle: CSS.Properties = {
+  display: "flex",
+  flexDirection: "row",
+  gap: "24px",
+  alignItems: "flex-start",
+  justifyContent: "center",
+};
+
+const siblingItemStyle: CSS.Properties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "6px",
+  textDecoration: "none",
+};
+
+const siblingLogoStyle: CSS.Properties = {
+  width: "72px",
+  height: "auto",
+};
+
+const siblingUrlStyle: CSS.Properties = {
+  color: "#888",
+  fontSize: "11px",
+  letterSpacing: "0.3px",
+  textAlign: "center",
+};
+
+const footerStyle: CSS.Properties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  gap: "12px",
+  paddingTop: "24px",
+  borderTop: "1px solid #333",
+  width: "100%",
+};
+
+const footerLogosRowStyle: CSS.Properties = {
+  display: "flex",
+  flexDirection: "row",
+  gap: "24px",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const footerLogoStyle: CSS.Properties = {
+  height: "36px",
+  width: "auto",
+  filter: "brightness(0) invert(1)",
+};
+
+const nsfTextStyle: CSS.Properties = {
+  color: "#888",
+  fontSize: "11px",
+  textAlign: "center",
+  margin: 0,
+  lineHeight: "1.6",
+  letterSpacing: "0.3px",
 };
