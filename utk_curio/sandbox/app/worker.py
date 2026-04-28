@@ -195,84 +195,196 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
     """
     Execute user JavaScript code in an isolated Node.js subprocess.
 
-    User code is the body of `async function(arg) { <code> }`. Input is loaded
-    from DuckDB, serialized to JSON, and passed as `arg`. The return value is
-    saved back to DuckDB.
+    User code may contain top-level ES module `import` statements; these are
+    hoisted to the top of the generated .mjs file so that autk-* packages
+    installed in the project root's node_modules/ resolve correctly (Node.js
+    walks up from the script file's location to find node_modules/).
+
+    The script is written inside launch_dir (the project root) so the upward
+    walk from the script finds node_modules/ there.
 
     Returns {'stdout': [str, ...], 'stderr': str, 'output': {'path': str, 'dataType': str}}
     """
     import json
     import os
+    import pathlib
+    import re
     import subprocess
     import tempfile
     import time
     import traceback
+    import uuid
 
-    load_from_duckdb = _globals_cache['load_from_duckdb']
-    save_to_duckdb   = _globals_cache['save_to_duckdb']
-    detect_kind      = _globals_cache['detect_kind']
+    from utk_curio.sandbox.util.db import (
+        get_db_path,
+        release_connection,
+        init_db,
+        get_connection,
+    )
 
     t0 = time.perf_counter()
     script_path = None
     result_path = None
 
+    cwd = launch_dir or os.getcwd()
+
+    # Absolute path to the DuckDB file and to curio_db.mjs.
+    db_path       = get_db_path()
+    curio_db_url  = (pathlib.Path(__file__).parent.parent / 'util' / 'curio_db.mjs').as_uri()
+
     try:
-        # Load input from DuckDB.
-        input_data = None
+        # Build the artifact-ID value to pass into Node.js.
+        # For 'outputs' (multi-input), pre-parse the Python list string → proper JSON array.
+        # For single inputs, pass the artifact ID string directly.
         if data_type == 'outputs' and file_path:
             file_path_list = eval(file_path, {'__builtins__': {}})
-            input_data = [load_from_duckdb(elem['path'], session_id=session_id) for elem in file_path_list]
-        elif file_path:
-            input_data = load_from_duckdb(file_path, session_id=session_id)
+            artifact_id_for_js = json.dumps(file_path_list)   # embeds as JS array literal
+        else:
+            artifact_id_for_js = json.dumps(file_path or '')
 
-        input_json = _serialize_for_js(input_data)
+        # Hoist static `import` lines from user code to the top of the .mjs
+        # file so they are valid ES module declarations.
+        import_re = re.compile(r'^import\b[^\n]*', re.MULTILINE)
+        user_imports = '\n'.join(m.group(0).rstrip(';').rstrip() + ';'
+                                 for m in import_re.finditer(code))
+        clean_code = import_re.sub('', code).strip()
 
-        # Write temp files for the script and its result.
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as tf:
-            script_path = tf.name
+        # Write the temp script inside cwd so Node's upward module resolution
+        # finds node_modules/ at the project root.
+        script_name = f'_curio_{uuid.uuid4().hex}.mjs'
+        script_path = os.path.join(cwd, script_name)
+
+        # Result file can live in the system temp dir (referenced by absolute path).
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as rf:
             result_path = rf.name
 
-        # Indent user code for the async function body.
-        indented = '\n'.join('    ' + line for line in code.splitlines())
+        # Indent clean user code for the async function body.
+        indented = '\n'.join('    ' + line for line in clean_code.splitlines())
 
-        result_path_escaped = result_path.replace('\\', '\\\\')
         wrapper = (
-            f"const arg = {input_json};\n"
+            # curio_db.mjs handles its own worker_threads setup; the web-worker
+            # polyfill below is kept so that user code importing autk-db via the
+            # browser path still works.
+            "import WebWorker from 'web-worker';\n"
+            "if (typeof self === 'undefined') globalThis.self = globalThis;\n"
+            "if (typeof Worker === 'undefined') globalThis.Worker = WebWorker;\n"
+            "const __origFetch = globalThis.fetch;\n"
+            "globalThis.fetch = (url, opts = {}) => {\n"
+            "  if (typeof url === 'string' && url.includes('overpass-api.de')) {\n"
+            "    opts = { ...opts, headers: { ...opts.headers, 'User-Agent': 'autk-db/1.3.1' } };\n"
+            "  }\n"
+            "  return __origFetch(url, opts);\n"
+            "};\n"
+            "\n"
+            # curio_db.mjs: load/save artifacts from the shared DuckDB file.
+            f"import {{ loadFromDuckdb, saveToDuckdb, detectKind }} from {json.dumps(curio_db_url)};\n"
+            f"{user_imports}\n"
+            "import { writeFileSync } from 'fs';\n"
+            "\n"
+            # Runtime constants injected by Python.
+            f"const __artifactId = {artifact_id_for_js};\n"
+            f"const __dataType   = {json.dumps(data_type)};\n"
+            f"const __dbPath     = {json.dumps(db_path)};\n"
+            f"const __sessionId  = {json.dumps(session_id)};\n"
+            f"const __nodeType   = {json.dumps(node_type)};\n"
             f"const __resultFile = {json.dumps(result_path)};\n"
-            "const fs = require('fs');\n"
             "const __logs = [];\n"
             "const __origLog = console.log;\n"
             "console.log = (...args) => {\n"
             "  __logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));\n"
             "  __origLog(...args);\n"
             "};\n"
-            "(async () => {\n"
-            "  try {\n"
-            "    const __result = await (async function(arg) {\n"
-            f"{indented}\n"
-            "    })(arg);\n"
-            "    fs.writeFileSync(__resultFile, JSON.stringify({success: true, result: __result, logs: __logs}));\n"
-            "  } catch(e) {\n"
-            "    fs.writeFileSync(__resultFile, JSON.stringify({success: false, error: e.message + '\\n' + (e.stack || ''), logs: __logs}));\n"
+            "console.log('[curio] imports loaded, loading input...');\n"
+            "try {\n"
+            # Load input from DuckDB (mirrors Python's load_from_duckdb call).
+            "  let arg = null;\n"
+            "  if (__dataType === 'outputs' && Array.isArray(__artifactId)) {\n"
+            "    arg = [];\n"
+            "    for (const item of __artifactId)\n"
+            "      arg.push(await loadFromDuckdb(item.path, __dbPath, __sessionId));\n"
+            "  } else if (__artifactId) {\n"
+            "    arg = await loadFromDuckdb(__artifactId, __dbPath, __sessionId);\n"
             "  }\n"
-            "})();\n"
+            "  console.log('[curio] input loaded, starting user code...');\n"
+            "  const __result = await (async function(arg) {\n"
+            f"{indented}\n"
+            "  })(arg);\n"
+            # Save output to DuckDB (mirrors Python's save_to_duckdb call).
+            "  console.log('[curio] user code finished, saving result...');\n"
+            "  const __outArtifactId = await saveToDuckdb(__result, __dbPath, __nodeType, __sessionId);\n"
+            "  const __outKind = detectKind(__result);\n"
+            "  writeFileSync(__resultFile, JSON.stringify({success: true, artifactId: __outArtifactId, dataType: __outKind, logs: __logs}));\n"
+            "  console.log('[curio] done.');\n"
+            "} catch(e) {\n"
+            "  console.log('[curio] error: ' + e.message);\n"
+            "  writeFileSync(__resultFile, JSON.stringify({success: false, error: e.message + '\\n' + (e.stack || ''), logs: __logs}));\n"
+            "}\n"
         )
 
         with open(script_path, 'w', encoding='utf-8') as f:
             f.write(wrapper)
 
-        proc = subprocess.run(
+        import sys as _sys
+        import threading
+        print(f"[execJs] starting Node.js  node={node_type}  script={script_path}", file=_sys.stderr, flush=True)
+
+        # Release Python's persistent R/W connection so Node.js can open the file.
+        release_connection()
+
+        proc = subprocess.Popen(
             ['node', script_path],
-            capture_output=True, text=True, timeout=30,
-            cwd=launch_dir or os.getcwd(),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, cwd=cwd,
         )
 
-        with open(result_path, 'r', encoding='utf-8') as f:
-            run_result = json.load(f)
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+
+        def _stream(pipe, lines, label):
+            for line in pipe:
+                line = line.rstrip('\n')
+                lines.append(line)
+                print(f"[execJs] {label}: {line}", file=_sys.stderr, flush=True)
+
+        t_out = threading.Thread(target=_stream, args=(proc.stdout, stdout_lines, 'stdout'), daemon=True)
+        t_err = threading.Thread(target=_stream, args=(proc.stderr, stderr_lines, 'stderr'), daemon=True)
+        t_out.start()
+        t_err.start()
+
+        try:
+            proc.wait(timeout=300)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            t_out.join()
+            t_err.join()
+            raise
+
+        t_out.join()
+        t_err.join()
 
         t1 = time.perf_counter()
-        print(f"[execJs] total={t1-t0:.3f}s  node={node_type}", file=__import__('sys').__stderr__, flush=True)
+        print(f"[execJs] Node.js finished  total={t1-t0:.3f}s  exit={proc.returncode}  node={node_type}", file=_sys.stderr, flush=True)
+
+        class _ProcResult:
+            returncode = proc.returncode
+            stdout = '\n'.join(stdout_lines)
+            stderr = '\n'.join(stderr_lines)
+        proc = _ProcResult()
+
+        # If Node exited non-zero the script likely crashed before writing the
+        # result file (e.g. import error, syntax error). Surface stderr directly.
+        raw = ''
+        try:
+            with open(result_path, 'r', encoding='utf-8') as f:
+                raw = f.read().strip()
+            run_result = json.loads(raw)
+        except (json.JSONDecodeError, ValueError):
+            stderr_msg = (proc.stderr or '').strip() or (proc.stdout or '').strip() or 'Node.js exited without writing a result.'
+            return {
+                'stdout': [],
+                'stderr': stderr_msg,
+                'output': {'path': '', 'dataType': 'str'},
+            }
 
         if not run_result.get('success'):
             return {
@@ -281,9 +393,8 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
                 'output': {'path': '', 'dataType': 'str'},
             }
 
-        js_result = run_result['result']
-        result_artifact = save_to_duckdb(js_result, node_id=node_type, session_id=session_id)
-        out_kind = detect_kind(js_result)
+        result_artifact = run_result['artifactId']
+        out_kind = run_result['dataType']
 
         return {
             'stdout': run_result.get('logs', []),
@@ -292,12 +403,18 @@ def execute_js_code(code, file_path, node_type, data_type, launch_dir=None, sess
         }
 
     except subprocess.TimeoutExpired:
-        return {'stdout': [], 'stderr': 'JavaScript execution timed out (30 s)', 'output': {'path': '', 'dataType': 'str'}}
+        return {'stdout': [], 'stderr': 'JavaScript execution timed out (300 s)', 'output': {'path': '', 'dataType': 'str'}}
     except FileNotFoundError:
         return {'stdout': [], 'stderr': 'Node.js not found. Please install Node.js to use JS Computation nodes.', 'output': {'path': '', 'dataType': 'str'}}
     except Exception:
         return {'stdout': [], 'stderr': traceback.format_exc(), 'output': {'path': '', 'dataType': 'str'}}
     finally:
+        # Node.js has exited; restore Python's persistent DuckDB connection.
+        try:
+            init_db()
+            get_connection()
+        except Exception:
+            pass
         for p in (script_path, result_path):
             if p:
                 try:
