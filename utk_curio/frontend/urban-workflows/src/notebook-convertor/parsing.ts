@@ -163,6 +163,18 @@ export function extractVegaLiteSpecCode(code: string): string {
 }
 
 export function extractUtkSpecCode(code: string): string {
+  // Prefer grammar_content = """...""" (generated notebook format) — it holds the
+  // full original spec including ex_knots, grammar, and other attributes.
+  const contentMarker = 'grammar_content = """';
+  const contentStart = code.indexOf(contentMarker);
+  if (contentStart >= 0) {
+    const strStart = contentStart + contentMarker.length;
+    const strEnd = code.indexOf('"""', strStart);
+    if (strEnd > strStart) {
+      return code.slice(strStart, strEnd).trim();
+    }
+  }
+
   const markers = ["grammar =", "utk_spec =", "utk_grammar ="];
   let specAssignStart = -1;
 

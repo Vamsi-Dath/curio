@@ -38,8 +38,14 @@ export function buildExecutionGraph(
       sourceInfo.dependents.add(target);
     }
 
-    const targetHandle = edge.targetHandle ?? (bidirectional ? "in/out" : "in");
+    let targetHandle = edge.targetHandle ?? (bidirectional ? "in/out" : "in");
     const sourceHandle = edge.sourceHandle ?? (bidirectional ? "in/out" : "out");
+
+    // TrillGenerator doesn't persist targetHandle, so recover MergeFlow slot from edge ID.
+    if (targetHandle === "in" && !bidirectional) {
+      const slotMatch = edge.id.match(/in_(\d+)/);
+      if (slotMatch) targetHandle = `in_${slotMatch[1]}`;
+    }
 
     if (!targetInfo.inputs[targetHandle]) {
       targetInfo.inputs[targetHandle] = [];
@@ -218,12 +224,18 @@ export function normalizeNotebookConnection(connection: NotebookTrillConnection)
     connection.sourceHandle === "in/out" ||
     connection.targetHandle === "in/out";
 
+  const targetHandle = connection.targetHandle ?? (bidirectional ? "in/out" : "in");
+  const isMergeSlot = /^in_\d+$/.test(targetHandle);
+  const fallbackId = isMergeSlot
+    ? `edge_${targetHandle}_${sanitizeId(connection.source)}_${sanitizeId(connection.target)}`
+    : `edge_${uuid()}`;
+
   return {
-    id: connection.id ?? `edge_${uuid()}`,
+    id: connection.id ?? fallbackId,
     source: connection.source,
     target: connection.target,
     sourceHandle: connection.sourceHandle ?? (bidirectional ? "in/out" : "out"),
-    targetHandle: connection.targetHandle ?? (bidirectional ? "in/out" : "in"),
+    targetHandle,
     type: bidirectional ? "Interaction" : connection.type,
   };
 }
@@ -240,9 +252,15 @@ export function buildNotebookTrillConnectionsMetadata(
   const inputs: NotebookTrillConnection[] = [];
   const outputs: NotebookTrillConnection[] = [];
 
+  const isMergeFlowHandle = (handle: string | undefined): boolean =>
+    !!handle && /^in_\d+$/.test(handle);
+
   for (const [targetHandle, connections] of Object.entries(nodeInfo.inputs)) {
     for (const connection of connections) {
       inputs.push({
+        id: isMergeFlowHandle(targetHandle)
+          ? `edge_${targetHandle}_${sanitizeId(connection.source)}_${sanitizeId(nodeId)}`
+          : undefined,
         source: connection.source,
         target: nodeId,
         sourceHandle: connection.sourceHandle,
@@ -255,6 +273,9 @@ export function buildNotebookTrillConnectionsMetadata(
   for (const [sourceHandle, connections] of Object.entries(nodeInfo.outputs)) {
     for (const connection of connections) {
       outputs.push({
+        id: isMergeFlowHandle(connection.targetHandle)
+          ? `edge_${connection.targetHandle}_${sanitizeId(nodeId)}_${sanitizeId(connection.target)}`
+          : undefined,
         source: nodeId,
         target: connection.target,
         sourceHandle,

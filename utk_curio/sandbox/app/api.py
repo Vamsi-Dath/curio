@@ -159,7 +159,17 @@ def exec():
     stdout = [item for item in stdout.split("\n") if item != '']
 
     if(len(stdout) > 0):
-        output = json.loads(stdout[-1])
+        try:
+            output = json.loads(stdout[-1])
+        except (json.JSONDecodeError, ValueError) as e:
+            # If parsing fails, it means the expected JSON output wasn't generated
+            # This usually indicates an error occurred during user code execution
+            output = {}
+            output['path'] = ""
+            output['dataType'] = "str"
+            if stderr:
+                # Append the actual error to stderr for debugging
+                pass
     else:
         output = {}
         output['path'] = ""

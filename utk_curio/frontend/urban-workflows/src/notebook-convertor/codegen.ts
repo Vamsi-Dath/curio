@@ -47,8 +47,62 @@ export function buildTextVisualizationBody(inputVar: string): string {
 }
 
 export function buildImageVisualizationBody(inputVar: string): string {
-  return `\ninput_data = ${inputVar}\nfrom IPython.display import display, Image\ntry:\n    display(Image(input_data))\nexcept Exception:\n    display(input_data)\n\nreturn input_data\n`;
+  return `
+input_data = ${inputVar}
+from IPython.display import display, Image, HTML
+import pandas as pd
+from io import BytesIO
+import base64
+
+# Handle both DataFrame and direct image input
+if isinstance(input_data, pd.DataFrame):
+    # Expecting DataFrame with 'image_id' and 'image_content' columns (base64 encoded)
+    cols = input_data.columns.tolist()
+    image_col = 'image_content' if 'image_content' in cols else (cols[1] if len(cols) > 1 else None)
+    id_col = 'image_id' if 'image_id' in cols else cols[0]
+    
+    if image_col is None:
+        display(input_data)
+    else:
+        # Create HTML grid for images
+        grid_html = '<div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; padding: 10px;">'
+        
+        for idx, row in input_data.iterrows():
+            image_id = str(row[id_col]) if id_col in row else f"Image {idx}"
+            image_content = row[image_col]
+            
+            try:
+                # Check if image_content is base64 string
+                if isinstance(image_content, str):
+                    if not image_content.startswith('data:image'):
+                        image_content = f'data:image/png;base64,{image_content}'
+                    grid_html += f'<div style="text-align: center;"><img src="{image_content}" style="max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px;"/><p style="margin: 5px 0; font-size: 12px;">{image_id}</p></div>'
+                else:
+                    grid_html += f'<div style="text-align: center;"><p>Invalid image format for {image_id}</p></div>'
+            except Exception as e:
+                grid_html += f'<div style="text-align: center;"><p>Error displaying {image_id}: {str(e)}</p></div>'
+        
+        grid_html += '</div>'
+        display(HTML(grid_html))
+else:
+    # Single image or fallback
+    try:
+        if isinstance(input_data, str):
+            # Base64 encoded image or file path
+            if input_data.startswith('data:image') or input_data.startswith('/') or input_data.endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                display(Image(input_data))
+            else:
+                # Assume base64 encoded
+                display(Image(data=base64.b64decode(input_data)))
+        else:
+            display(Image(input_data))
+    except Exception:
+        display(input_data)
+
+return input_data
+`;
 }
+
 
 export function buildConstantsBody(code: string): string {
   return `\n${code}\n`;

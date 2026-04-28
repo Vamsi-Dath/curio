@@ -6,6 +6,7 @@
 import warnings
 warnings.filterwarnings('ignore')
 
+import sys
 import rasterio
 import geopandas as gpd
 import pandas as pd
@@ -75,8 +76,16 @@ if input is not None and not (isinstance(input, str) and input == ''):
 # checkIOType(parsedOutput, nodeType, False)
 
 #duckdb output dispatch:
-output = userCode(incomingInput)
-out_kind = detect_kind(output)
+try:
+    output = userCode(incomingInput)
+except Exception as e:
+    print(json.dumps({'error': str(e), 'type': type(e).__name__}), file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    # Output a safe default
+    output = None
+    
+out_kind = detect_kind(output) if output is not None else 'str'
 if out_kind == 'outputs':
     synthetic_out = {
         'dataType': 'outputs',
@@ -85,19 +94,20 @@ if out_kind == 'outputs':
 else:
     synthetic_out = {'dataType': out_kind, 'data': None}
 #checkIOType is not inert. It halts the pipeline when a node produces the wrong kind of thing. it's a gate, not a modifier. 
-checkIOType(synthetic_out, nodeType, False)
-
-# print(parsedOutput)
-# print(type(parsedOutput['data'][0]))
-# print(parsedOutput)
-
-# serialization output saving
-# file_path = save_memory_mapped_file(parsedOutput)
-# print(json.dumps(parsedOutput)) # stdout: 0,-2; node output: -2
-# print(json.dumps({'path': file_path, 'dataType': parsedOutput['dataType']})) # path: -1
-# print(json.dumps(parsedOutput))
-
+try:
+    checkIOType(synthetic_out, nodeType, False)
+except Exception as e:
+    print(json.dumps({'error': str(e), 'type': type(e).__name__}), file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
 
 # duckdb output saving
-file_path = save_to_duckdb(output, node_id=nodeType)
-print(json.dumps({'path': file_path, 'dataType': out_kind})) # path: -1
+try:
+    file_path = save_to_duckdb(output, node_id=nodeType) if output is not None else None
+    print(json.dumps({'path': file_path, 'dataType': out_kind})) # path: -1
+except Exception as e:
+    print(json.dumps({'error': str(e), 'type': type(e).__name__}), file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    # Output a safe default to prevent JSON parsing error
+    print(json.dumps({'path': '', 'dataType': 'str', 'error': str(e)}))

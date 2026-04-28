@@ -174,11 +174,32 @@ export class TrillNotebookConverter {
       (edge) => edgeKey(edge),
     );
 
-    if (sawExplicitConnections) {
-      edges.push(...explicitEdges);
+    // MergeFlow edges are built from the ordered variable list in the cell body
+    // (the `inputs = [var0, var1, ...]` list), assigning in_0/in_1/... by position.
+    // Edge IDs embed the slot handle so useCode.ts can recover targetHandle on load.
+    const mergeFlowTargetIds = new Set<string>(
+      nodes.filter((n) => n.type === NodeType.MERGE_FLOW).map((n) => n.id),
+    );
+    const mergeFlowEdges: TrillEdge[] = [];
+    for (const node of nodes) {
+      if (node.type !== NodeType.MERGE_FLOW) continue;
+      (nodeInputs[node.id] ?? []).forEach((varName, slotIndex) => {
+        const sourceId = producedByVar[varName];
+        if (!sourceId || sourceId === node.id) return;
+        const handle = `in_${slotIndex}`;
+        mergeFlowEdges.push({
+          id: `edge_${handle}_${sanitizeId(sourceId)}_${sanitizeId(node.id)}`,
+          source: sourceId,
+          sourceHandle: "out",
+          target: node.id,
+          targetHandle: handle,
+        });
+      });
     }
 
-    if (!sawExplicitConnections) {
+    if (sawExplicitConnections) {
+      edges.push(...explicitEdges.filter((e) => !mergeFlowTargetIds.has(e.target)));
+    } else {
       edges.push(
         ...inferEdgesFromVariables(
           nodes,
@@ -186,9 +207,11 @@ export class TrillNotebookConverter {
           producedByVar,
           (node) => node.type === NodeType.MERGE_FLOW,
           () => `edge_${uuid()}`,
-        ),
+        ).filter((e) => !mergeFlowTargetIds.has(e.target)),
       );
     }
+
+    edges.push(...mergeFlowEdges);
 
     if (edges.length === 0) {
       edges.push(...buildLinearFallbackEdges(nodes, () => `edge_${uuid()}`));
@@ -453,6 +476,24 @@ export class TrillNotebookConverter {
       return NodeType.VIS_VEGA;
     }
 
+    // Detect VIS_IMAGE patterns
+    const imagePattern = /from IPython\.display import.*Image|display\(Image\(|\.to_json\(\)|image_id|image_content/;
+    if (imagePattern.test(codeWithoutMeta)) {
+      return NodeType.VIS_IMAGE;
+    }
+
+    // Detect VIS_TABLE patterns
+    const tablePattern = /from IPython\.display import.*display\s*\n.*display\s*\(.*input_data\s*\)|\.display\(\)|DataFrame.*display/;
+    if (tablePattern.test(codeWithoutMeta)) {
+      return NodeType.VIS_TABLE;
+    }
+
+    // Detect VIS_TEXT patterns
+    const textPattern = /display\(str\(.*input_data.*\)\)/;
+    if (textPattern.test(codeWithoutMeta)) {
+      return NodeType.VIS_TEXT;
+    }
+
     return NodeType.COMPUTATION_ANALYSIS;
   }
 
@@ -567,18 +608,42 @@ export class TrillNotebookConverter {
     const tryStart = code.indexOf(tryMarker, outputStart >= 0 ? outputStart : 0);
     const exceptStart = code.indexOf(exceptMarker, tryStart >= 0 ? tryStart : 0);
 
+    // If any of the expected markers are missing, return code as-is
     if (functionStart < 0 || outputStart < 0 || tryStart < 0 || exceptStart < 0) {
       return code;
     }
 
-    const bodyStart = code.indexOf("\n\n", functionStart);
-    const bodyEnd = code.lastIndexOf("\n\n", outputStart);
-
-    if (bodyStart < 0 || bodyEnd < 0 || bodyEnd <= bodyStart) {
+    // Find the start of the function body (after "def _curio_node():")
+    const functionDefEnd = functionStart + functionMarker.length;
+    const bodyStartSearch = code.indexOf("\n", functionDefEnd);
+    if (bodyStartSearch < 0) {
       return code;
     }
 
-    const body = code.slice(bodyStart + 2, bodyEnd);
+    // Look for the first non-empty line after the function definition
+    let bodyStart = bodyStartSearch;
+    let bodyStartLineNum = bodyStart;
+    
+    // Skip to start of actual code body (after function definition line)
+    // Allow for empty lines immediately after function def
+    while (bodyStart < outputStart && code[bodyStart] === '\n') {
+      bodyStart++;
+    }
+
+    // Find end of body (just before _curio_output assignment)
+    let bodyEnd = outputStart - 1;
+    
+    // Trim trailing whitespace/newlines before the output marker
+    while (bodyEnd > bodyStart && /[\n\s]/.test(code[bodyEnd])) {
+      bodyEnd--;
+    }
+
+    if (bodyEnd <= bodyStart) {
+      // Body is empty
+      return "";
+    }
+
+    const body = code.slice(bodyStart, bodyEnd + 1);
     const deindentedBody = deindentText(body, 4).trimEnd();
     return stripGeneratedNodePrelude(deindentedBody).trim();
   }
