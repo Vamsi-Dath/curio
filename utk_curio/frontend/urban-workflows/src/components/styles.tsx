@@ -6,7 +6,6 @@ import { useFlowContext } from "../providers/FlowProvider";
 import { NodeRemoveChange, useReactFlow } from "reactflow";
 
 import { CommentsList, IComment } from "./comments/CommentsList";
-import { useRightClickMenu } from "../hook/useRightClickMenu";
 
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
@@ -141,7 +140,6 @@ export const NodeContainer = ({
     const [currentNodeHeight, setCurrentNodeHeight] = useState<
         number | undefined
     >(nodeHeight);
-    const { showMenu, menuPosition, onContextMenu } = useRightClickMenu();
     const [minimized, setMinimized] = useState(
         data.nodeType == NodeType.MERGE_FLOW
     );
@@ -370,16 +368,6 @@ export const NodeContainer = ({
     const addComment = (comment: IComment) => {
         setComments([...comments, comment]);
     };
-
-    const options = disableComments
-        ? [{ name: "Delete", action: onDelete }]
-        : [
-              { name: "Delete", action: onDelete },
-              {
-                  name: showComments ? "Hide Comments" : "Show Comments",
-                  action: () => setShowComments(!showComments),
-              },
-          ];
 
     useEffect(() => {
         setPinnedToDashboard(!!dashboardPins[nodeId]);
@@ -629,7 +617,6 @@ export const NodeContainer = ({
                     ...(data.keywordHighlighted ? {backgroundColor: "#1E1F23"} : {}),
                     ...(dashboardOn ? {border: "2px solid #000", boxShadow: "none", borderRadius: "0", resize: "none"} : {})
                 }}
-                onContextMenu={onContextMenu}
             >
                 {!noContent && !dashboardOn ? (
                     <div style={{
@@ -981,14 +968,6 @@ export const NodeContainer = ({
                     ) : null}
                 </Row>}
 
-                {
-                    !(data.suggestionType != "none" && data.suggestionType != undefined) ?
-                    <RightClickMenu
-                        menuPosition={menuPosition}
-                        showMenu={showMenu}
-                        options={options}
-                    /> : null
-                }
             </div>
 
             {showComments && (
@@ -1099,35 +1078,6 @@ const getNodeContainerStyles = (nodeType: string): CSS.Properties => ({
     padding: "5px",
     boxShadow: "rgba(0, 0, 0, 0.35) 0px 5px 15px",
 });
-
-export const RightClickMenu = ({
-    showMenu,
-    menuPosition,
-    options,
-}: {
-    showMenu: boolean;
-    menuPosition: { y: number; x: number };
-    options: { name: string; action: () => void }[];
-}) => {
-    return (
-        <Dropdown show={showMenu} drop="end">
-            <Dropdown.Menu
-                style={{
-                    position: "fixed",
-                    top: menuPosition.y,
-                    left: menuPosition.x,
-                    transform: "translate(0, 0)",
-                }}
-            >
-                {options.map((option) => (
-                    <Dropdown.Item key={option.name} onClick={option.action}>
-                        {option.name}
-                    </Dropdown.Item>
-                ))}
-            </Dropdown.Menu>
-        </Dropdown>
-    );
-};
 
 const nodeContentStyle: CSS.Properties = {
     backgroundColor: "white",
