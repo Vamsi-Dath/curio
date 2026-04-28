@@ -7,7 +7,7 @@ wire the backend to a dedicated, wiped-clean test database — *before* any
 
 This keeps dev and test state separate. Every pytest invocation — unit or
 E2E — starts against an empty database, and the dev
-``urban_workflow.db`` / ``.curio/provenance.db`` files are never touched.
+``urban_workflow.db`` file is never touched.
 """
 
 import os
@@ -51,7 +51,6 @@ _TEST_DB_DIR = os.path.join(_TEST_WORKSPACE, ".curio", "test")
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 
 _TEST_SQLA_DB = os.path.join(_TEST_DB_DIR, "urban_workflow_test.db")
-_TEST_PROV_DB = os.path.join(_TEST_DB_DIR, "provenance.db")
 
 # Wipe stale files so the session always starts on an empty DB, matching the
 # isolation Django's test runner provides. We skip the wipe when attaching to
@@ -59,11 +58,10 @@ _TEST_PROV_DB = os.path.join(_TEST_DB_DIR, "provenance.db")
 # workspace — those own the DB lifecycle and the running backend is holding
 # sqlite connections we shouldn't yank.
 if _OWNS_WORKSPACE:
-    for _path in (_TEST_SQLA_DB, _TEST_PROV_DB):
-        try:
-            os.remove(_path)
-        except FileNotFoundError:
-            pass
+    try:
+        os.remove(_TEST_SQLA_DB)
+    except FileNotFoundError:
+        pass
 
 os.environ["CURIO_TESTING"] = "1"
 os.environ["CURIO_LAUNCH_CWD"] = _TEST_WORKSPACE
@@ -89,7 +87,6 @@ from .test_frontend.fixtures import *  # noqa: E402,F401,F403
 import pytest  # noqa: E402
 
 from utk_curio.backend.app import create_app  # noqa: E402
-from utk_curio.backend.create_provenance_db import initialize_db  # noqa: E402
 from utk_curio.backend.extensions import db as _db  # noqa: E402
 
 
@@ -103,8 +100,6 @@ sys.dont_write_bytecode = True
 # ---------------------------------------------------------------------------
 
 def _bootstrap_schemas() -> None:
-    initialize_db(_TEST_PROV_DB)
-
     bootstrap_app = create_app()
     with bootstrap_app.app_context():
         _db.create_all()
@@ -155,19 +150,18 @@ def test_workspace():
     """Absolute path of the per-session test workspace.
 
     Inside this directory live ``.curio/test/urban_workflow_test.db`` and
-    ``.curio/test/provenance.db`` — the two DBs that replace the dev
-    ``urban_workflow.db`` / ``.curio/provenance.db`` for every backend-
-    booting test. Created by the module-level bootstrap above.
+    ``.curio/test/urban_workflow_test.db`` — the DB that replaces the dev
+    ``urban_workflow.db`` for every backend-booting test.
+    Created by the module-level bootstrap above.
     """
     return _TEST_WORKSPACE
 
 
 @pytest.fixture(scope="session")
 def test_db_paths(test_workspace):
-    """Absolute paths of the two test DB files. Useful for e2e cleanup."""
+    """Absolute path of the test DB file. Useful for e2e cleanup."""
     return {
         "sqla": _TEST_SQLA_DB,
-        "provenance": _TEST_PROV_DB,
         "dir": _TEST_DB_DIR,
     }
 

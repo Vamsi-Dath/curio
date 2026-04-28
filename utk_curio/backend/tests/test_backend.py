@@ -9,8 +9,8 @@ from utk_curio.backend.app.api.routes import bp
 
 # These tests use a bare Flask app with only the blueprint registered; they have
 # no SQLAlchemy user DB, so auth-protected endpoints cannot work here.
-# The full test coverage lives in test_prov/ and test_projects/.
-_SKIP_AUTH = unittest.skip("Requires full app+db setup — covered by test_prov/")
+# Full coverage for those routes lives in test_projects/ and test_users/.
+_SKIP_AUTH = unittest.skip("Requires full app+db setup — covered by test_projects/test_users/")
 
 # Initialize the Flask app for testing
 app = Flask(__name__)
@@ -22,22 +22,22 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 test_data = {
     "workflow": "test_workflow",
     "data": {
-        "workflow_name": "test_workflow",  # Make sure this matches the workflow name inserted above
-        "activity_name": "COMPUTATION_ANALYSIS",  # Include the activity name in the request
+        "workflow_name": "test_workflow",
+        "activity_name": "COMPUTATION_ANALYSIS",
         "activityexec_start_time": "2025-05-09T02:00:00",
         "activityexec_end_time": "2025-05-09T03:00:00",
-        "types_input": {"input_relation_1": 1},  # Sample input data
-        "types_output": {"output_relation_1": 1},  # Sample output data
+        "types_input": {"input_relation_1": 1},
+        "types_output": {"output_relation_1": 1},
         "activity_source_code": "return sum(args[0]) / len(args[0])",
         "input": {
             "dataType": "dataframe",
-            "path": "./examples/data/test.data"  
+            "path": "./examples/data/test.data"
         }
     }
 }
 
 class TestRoutes(unittest.TestCase):
-    
+
     @classmethod
     def setUpClass(cls):
         cls.client = app.test_client()
@@ -62,7 +62,7 @@ class TestRoutes(unittest.TestCase):
                     'file': (file, 'test_file.txt')  # Simulate the file upload
                 }
                 response = self.client.post('/upload', data=data)
-                
+
                 # Test if the file upload was successful
                 self.assertIn('File uploaded successfully', response.data.decode('utf-8'))
                 self.assertEqual(response.status_code, 200)
@@ -102,29 +102,10 @@ class TestRoutes(unittest.TestCase):
         self.assertIn('stdout', data)
         self.assertIn('stderr', data)
 
-    def test_db(self):
-        response = self.client.get('/checkDB')
-        self.assertEqual(response.status_code, 200)
-
     @_SKIP_AUTH
-    def test_prov(self):
-
-        response = self.client.get('/truncateDBProv')
-        self.assertEqual(response.status_code, 200)
-
-        response = self.client.post('/saveWorkflowProv', json=test_data)
-        self.assertEqual(response.status_code, 200)
-    
-        response = self.client.post('/newNodeProv', json=test_data)
-        self.assertEqual(response.status_code, 200)
-
-        # response = self.client.post('/nodeExecProv', json=test_data)
-        # self.assertEqual(response.status_code, 200)
-
-        response = self.client.post('/getNodeGraph', json=test_data)
-        self.assertEqual(response.status_code, 200)
-
-        response = self.client.post('/deleteNodeProv', json=test_data)
+    def test_db(self):
+        # checkDB now requires SQLAlchemy (full app) — covered by integration tests
+        response = self.client.get('/checkDB')
         self.assertEqual(response.status_code, 200)
 
 

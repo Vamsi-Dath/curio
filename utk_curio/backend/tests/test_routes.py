@@ -10,18 +10,10 @@ def test_app_routes(app):
         "/upload",
         "/processPythonCode",
         "/toLayers",
-        "/saveWorkflowProv",
-        "/newNodeProv",
-        "/deleteNodeProv",
-        "/newConnectionProv",
-        "/deleteConnectionProv",
-        "/nodeExecProv",
-        "/getNodeGraph",
-        "/truncateDBProv",
         "/signin",
         "/getUser",
         "/saveUserType",
-        "/saveUserProv",
+        "/checkDB",
     ]
 
     expected_app_routes = [
@@ -31,18 +23,10 @@ def test_app_routes(app):
         "api.upload_file",
         "api.process_python_code",
         "api.toLayers",
-        "api.save_workflow_prov",
-        "api.new_node_prov",
-        "api.delete_node_prov",
-        "api.new_connection_prov",
-        "api.delete_connection_prov",
-        "api.node_exec_prov",
-        "api.get_node_graph",
-        "api.truncate_db_prov",
         "api.signin_legacy",
         "api.get_user_legacy",
         "api.save_user_type_legacy",
-        "api.save_user_prov",
+        "api.check_db",
     ]
 
     with app.app_context():
