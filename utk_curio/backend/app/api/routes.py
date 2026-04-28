@@ -590,6 +590,7 @@ def process_python_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    print(f"[backend /processPythonCode] received  node={nodeType}", flush=True)
     input = {'path': "", 'dataType': ""}
     if(request.json.get('input')):
         req_input = request.json['input']
@@ -614,7 +615,7 @@ def process_python_code():
                                 "session_id": session_id,
                             }),
                             headers={"Content-Type": "application/json"},
-                            timeout=120)
+                            timeout=3000)
     t2 = _time.perf_counter()
 
     try:
@@ -636,7 +637,7 @@ def process_python_code():
 
     t3 = _time.perf_counter()
     print(
-        f"[backend /processPythonCode] parse={t1-t0:.3f}s"
+        f"[backend /processPythonCode] finished  parse={t1-t0:.3f}s"
         f"  sandbox_rtt={t2-t1:.3f}s"
         f"  json={t3-t2:.3f}s"
         f"  total={t3-t0:.3f}s"
@@ -655,6 +656,7 @@ def process_javascript_code():
 
     code = request.json['code']
     nodeType = request.json['nodeType']
+    print(f"[backend /processJavaScriptCode] received  node={nodeType}", flush=True)
     input = {'path': "", 'dataType': ""}
     if request.json.get('input'):
         req_input = request.json['input']
@@ -680,7 +682,7 @@ def process_javascript_code():
             "session_id": session_id,
         }),
         headers={"Content-Type": "application/json"},
-        timeout=120,
+        timeout=3000,
     )
     t2 = _time.perf_counter()
 
@@ -703,7 +705,7 @@ def process_javascript_code():
 
     t3 = _time.perf_counter()
     print(
-        f"[backend /processJavaScriptCode] parse={t1-t0:.3f}s"
+        f"[backend /processJavaScriptCode] finished  parse={t1-t0:.3f}s"
         f"  sandbox_rtt={t2-t1:.3f}s"
         f"  json={t3-t2:.3f}s"
         f"  total={t3-t0:.3f}s"

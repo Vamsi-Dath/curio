@@ -83,6 +83,33 @@ class TestSandbox(unittest.TestCase):
         self.assertIn('output', result)
         self.assertEqual(result['stderr'], '')
 
+    @_SKIP_NO_NODE
+    def test_exec_js_result_stored_in_duckdb(self):
+        """JS result is retrievable from Python DuckDB via the returned artifact ID."""
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        from utk_curio.sandbox.util.parsers import load_from_duckdb
+        _worker_init()
+        result = execute_js_code('return 42;', '', 'JS_COMPUTATION', '', session_id=None)
+        self.assertEqual(result['stderr'], '')
+        artifact_id = result['output']['path']
+        self.assertNotEqual(artifact_id, '')
+        value = load_from_duckdb(artifact_id, session_id=None)
+        self.assertEqual(value, 42)
+
+    @_SKIP_NO_NODE
+    def test_exec_js_receives_input_from_duckdb(self):
+        """JS code receives Python-DuckDB-stored input via the arg parameter."""
+        from utk_curio.sandbox.app.worker import execute_js_code, _worker_init
+        from utk_curio.sandbox.util.parsers import save_to_duckdb, load_from_duckdb
+        from utk_curio.sandbox.util.db import init_db
+        _worker_init()
+        init_db()
+        artifact_id = save_to_duckdb(10, node_id='JS_COMPUTATION', session_id=None)
+        result = execute_js_code('return arg + 1;', artifact_id, 'JS_COMPUTATION', 'int', session_id=None)
+        self.assertEqual(result['stderr'], '')
+        value = load_from_duckdb(result['output']['path'], session_id=None)
+        self.assertEqual(value, 11)
+
 
 if __name__ == "__main__":
     unittest.main()

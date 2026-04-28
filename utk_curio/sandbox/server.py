@@ -10,7 +10,8 @@ if __name__ == '__main__':
         host=os.getenv('FLASK_SANDBOX_HOST', '127.0.0.1'),
         port=int(os.getenv('FLASK_SANDBOX_PORT', 2000)),
         threaded=True,
-        debug=False,       # reloader was restarting the process on every DuckDB write (~2 s penalty)
-        use_reloader=False,
+        debug=False,
+        use_reloader=True,
+        exclude_patterns=['*.duckdb', '*.duckdb.wal', '*.duckdb-shm', '*.duckdb-wal'],
     )
 

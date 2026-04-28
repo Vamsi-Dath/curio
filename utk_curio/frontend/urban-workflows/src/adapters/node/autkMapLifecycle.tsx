@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { NodeLifecycleHook } from '../../registry/types';
+import { fetchData } from '../../services/api';
 
 const DEFAULT_CODE = `// 'arg' is the layer array from the upstream JS Computation node:
 // [{ name: string, type: string, geojson: GeoJSON.FeatureCollection }, ...]
@@ -22,17 +23,23 @@ export const useAutkMapLifecycle: NodeLifecycleHook = (data, nodeState) => {
 
             let arg: any = data.input;
 
-            // Resolve artifact reference if the input is a path object.
+            // Resolve artifact reference if the input is a path object (DuckDB artifact ID).
             if (arg && typeof arg === 'object' && arg.path) {
                 try {
-                    const res = await fetch(arg.path);
-                    arg = await res.json();
+                    // fetchData hits /get?fileName=<id> and returns {data: ..., dataType: '...'}
+                    const fetched = await fetchData(arg.path);
+                    arg = fetched?.data ?? [];
+                    // parseOutput wraps list elements as {data: ..., dataType: '...'} — unwrap them
+                    if (Array.isArray(arg)) {
+                        arg = arg.map((e: any) => e?.data ?? e);
+                    }
                 } catch {
                     nodeState.setOutput({ code: 'error', content: 'Failed to fetch layer data.' });
                     return;
                 }
+            } else {
+                arg = arg ?? [];
             }
-            arg = arg?.content ?? arg ?? [];
 
             nodeState.setOutput({ code: 'exec', content: '' });
             try {

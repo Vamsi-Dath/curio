@@ -168,9 +168,10 @@ def exec():
     session_id = request.json.get('session_id') or None
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
+    print(f"[sandbox /exec] received  node={node_type}", file=sys.stderr, flush=True)
     result = execute_code(code, str(file_path), str(node_type), str(data_type), launch_dir, session_id=session_id)
 
-    print(f"[sandbox /exec] total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /exec] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
 
 @app.route('/execJs', methods=['POST'])
@@ -189,9 +190,10 @@ def exec_js():
     session_id = request.json.get('session_id') or None
     launch_dir = os.environ.get('CURIO_LAUNCH_CWD', os.getcwd())
 
+    print(f"[sandbox /execJs] received  node={node_type}", file=sys.stderr, flush=True)
     result = execute_js_code(code, str(file_path), str(node_type), str(data_type), launch_dir, session_id=session_id)
 
-    print(f"[sandbox /execJs] total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
+    print(f"[sandbox /execJs] finished  total={time.perf_counter()-t0:.3f}s  node={node_type}", file=sys.stderr, flush=True)
     return jsonify(result)
 
 
