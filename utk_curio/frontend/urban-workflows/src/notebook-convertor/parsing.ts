@@ -162,6 +162,51 @@ export function extractVegaLiteSpecCode(code: string): string {
   return code.slice(objectStart, objectEnd + 1).trim();
 }
 
+export function extractUtkSpecCode(code: string): string {
+  const markers = ["grammar =", "utk_spec =", "utk_grammar ="];
+  let specAssignStart = -1;
+
+  for (const marker of markers) {
+    const index = code.indexOf(marker);
+    if (index >= 0) {
+      specAssignStart = index;
+      break;
+    }
+  }
+
+  if (specAssignStart < 0) {
+    return code;
+  }
+
+  const objectStart = code.indexOf("{", specAssignStart);
+  if (objectStart < 0) {
+    return code;
+  }
+
+  let depth = 0;
+  let objectEnd = -1;
+
+  for (let index = objectStart; index < code.length; index += 1) {
+    const char = code[index];
+
+    if (char === "{") {
+      depth += 1;
+    } else if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        objectEnd = index;
+        break;
+      }
+    }
+  }
+
+  if (objectEnd < 0) {
+    return code;
+  }
+
+  return code.slice(objectStart, objectEnd + 1).trim();
+}
+
 function isSimpleVariableName(value: string): boolean {
   if (!value) {
     return false;

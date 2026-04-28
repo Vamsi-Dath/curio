@@ -43,6 +43,7 @@ import {
   extractInputVariables,
   extractProducedVariables,
   extractVegaLiteSpecCode,
+  extractUtkSpecCode,
   replaceKeywordsOutsideStrings,
   stripGeneratedNodePrelude,
 } from "./notebook-convertor/parsing";
@@ -144,7 +145,9 @@ export class TrillNotebookConverter {
       const cleanCode =
         nodeType === NodeType.VIS_VEGA
           ? this.normalizeVegaSpecForCurio(extractVegaLiteSpecCode(cleanCodeBody))
-          : cleanCodeBody;
+          : nodeType === NodeType.VIS_UTK
+            ? this.normalizeUtkSpecForCurio(extractUtkSpecCode(cleanCodeBody))
+            : cleanCodeBody;
 
       const node: TrillNode = {
         id: nodeId,
@@ -463,6 +466,14 @@ export class TrillNotebookConverter {
   }
 
   private normalizeVegaSpecForCurio(specCode: string): string {
+    return replaceKeywordsOutsideStrings(specCode, {
+      True: "true",
+      False: "false",
+      None: "null",
+    });
+  }
+
+  private normalizeUtkSpecForCurio(specCode: string): string {
     return replaceKeywordsOutsideStrings(specCode, {
       True: "true",
       False: "false",
