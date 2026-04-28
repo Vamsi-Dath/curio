@@ -17,8 +17,6 @@ import { NodeType, EdgeType } from "../constants";
 import { getAllNodeTypes } from "../registry";
 import UniversalNode from "./UniversalNode";
 import BiDirectionalEdge from "./edges/BiDirectionalEdge";
-import { RightClickMenu } from "./styles";
-import { useRightClickMenu } from "../hook/useRightClickMenu";
 import { useCode } from "../hook/useCode";
 import { useProvenanceContext } from "../providers/ProvenanceProvider";
 import { buttonStyle } from "./styles";
@@ -90,7 +88,6 @@ export function MainCanvas() {
         };
     }, []);
 
-    const { onContextMenu, showMenu, menuPosition } = useRightClickMenu();
     const { createCodeNode } = useCode();
     const { llmRequest, AIModeRef, setAIMode } = useLLMContext();
 
@@ -419,7 +416,6 @@ export function MainCanvas() {
         <>
         {!loading ? <div
             style={{ width: "100vw", height: "100vh", backgroundColor: dashboardOn ? "#ffffff" : "#f0f0f0" }}
-            onContextMenu={!dashboardOn ? onContextMenu : undefined}
             // onWheelCapture={handleWheel}
         >
             {Object.keys(floatingPanels).map((key, index) => (
@@ -439,16 +435,6 @@ export function MainCanvas() {
                 setAIMode={setAIMode}
             />}
 
-            <RightClickMenu
-                showMenu={showMenu}
-                menuPosition={menuPosition}
-                options={[
-                    {
-                        name: "Add comment box",
-                        action: () => createCodeNode("COMMENTS"),
-                    },
-                ]}
-            />
             {dashboardOn && <DashboardPanel />}
             <ReactFlow
                 nodes={nodes}
