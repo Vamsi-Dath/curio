@@ -56,6 +56,7 @@ export default function UpMenu({
     const [activeMenu, setActiveMenu] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
     const [aiModeOn, setAiModeOn] = useState(false);
+    const [importWarning, setImportWarning] = useState<string | null>(null);
 
     const menuBarRef = useRef<HTMLDivElement>(null);
     const loadTrillInputRef = useRef<HTMLInputElement>(null);
@@ -236,8 +237,15 @@ export default function UpMenu({
                 try {
                     const jsonContent = JSON.parse(event.target.result);
                     const converter = new TrillNotebookConverter();
-                    const trillSpec = converter.notebookToTrill(jsonContent);
-                    loadTrill(trillSpec);
+                    const result = converter.notebookToTrill(jsonContent);
+                    if ((result as any).trillSpec) {
+                        loadTrill((result as any).trillSpec);
+                        const warnings = (result as any).warnings as string[] | undefined;
+                        setImportWarning(warnings && warnings.length > 0 ? warnings.join("\n") : null);
+                    } else {
+                        loadTrill(result as any);
+                        setImportWarning(null);
+                    }
                 } catch (err) {
                     console.error("Invalid notebook file:", err);
                 }
@@ -342,6 +350,12 @@ export default function UpMenu({
         setTutorialOpen(false);
     }, [tutorialOpen]);
 
+    useEffect(() => {
+        if (!importWarning) return;
+        const id = window.setTimeout(() => setImportWarning(null), 3000);
+        return () => window.clearTimeout(id);
+    }, [importWarning]);
+
     return (
         <>
             <input
@@ -368,6 +382,11 @@ export default function UpMenu({
                 className={clsx(styles.menuBar, "nowheel", "nodrag")}
                 ref={menuBarRef}
             >
+                {importWarning && (
+                    <div style={{ background: "#fff3cd", color: "#856404", padding: "8px 12px", borderRadius: 4, margin: "8px 12px" }}>
+                        <strong>Notebook import notice:</strong> {importWarning}
+                    </div>
+                )}
                 <Link to="/projects" style={{ display: "contents" }}>
                     <img className={styles.logo} src={logo} alt="Curio logo" />
                 </Link>
