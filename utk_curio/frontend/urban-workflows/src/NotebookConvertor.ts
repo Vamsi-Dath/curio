@@ -36,6 +36,7 @@ interface TrillEdge {
   target: string;
   sourceHandle?: string;
   targetHandle?: string;
+  type?: string;
 }
 
 interface TrillDataflow {
@@ -76,6 +77,25 @@ interface TrillMeta {
   type?: string;
   in?: string;
   out?: string;
+}
+
+interface NotebookTrillConnection {
+  id?: string;
+  source: string;
+  target: string;
+  sourceHandle?: string;
+  targetHandle?: string;
+  bidirectional?: boolean;
+  type?: string;
+}
+
+interface NotebookTrillMetadata {
+  id?: string;
+  type?: string;
+  in?: string;
+  out?: string;
+  inputs?: NotebookTrillConnection[];
+  outputs?: NotebookTrillConnection[];
 }
 
 export class TrillNotebookConverter {
@@ -128,6 +148,8 @@ export class TrillNotebookConverter {
     const edges: TrillEdge[] = [];
     const nodeInputs: Record<string, string[]> = {};
     const producedByVar: Record<string, string> = {};
+    const explicitEdges = new Map<string, TrillEdge>();
+    let sawExplicitConnections = false;
 
     let previousNodeId: string | null = null;
     const position = { x: 100, y: 100 };
@@ -146,17 +168,18 @@ export class TrillNotebookConverter {
       const source = cell.source;
       const code = Array.isArray(source) ? source.join("") : String(source ?? "");
 
+      const notebookMeta = this.extractNotebookTrillMetadata(cell);
       const trillMeta = this.extractTrillVariable(code);
 
       const nodeId =
-        trillMeta?.id ?? `notebook_cell_${uuid()}`;
+        notebookMeta?.id ?? trillMeta?.id ?? `notebook_cell_${uuid()}`;
       const inferredNodeType = this.inferNodeType(code);
       const nodeType =
-        trillMeta?.type ?? inferredNodeType;
+        notebookMeta?.type ?? trillMeta?.type ?? inferredNodeType;
       const nodeIn =
-        trillMeta?.in ?? "DEFAULT";
+        notebookMeta?.in ?? trillMeta?.in ?? "DEFAULT";
       const nodeOut =
-        trillMeta?.out ?? "DEFAULT";
+        notebookMeta?.out ?? trillMeta?.out ?? "DEFAULT";
 
       const codeWithoutMeta = this.removeTrillVariable(code);
       const inputVars = this.extractInputVariables(codeWithoutMeta);
@@ -188,37 +211,81 @@ export class TrillNotebookConverter {
       position.y += 150;
     });
 
+    for (const rawCell of rawCells) {
+      const cell = rawCell as Record<string, unknown>;
+      if (cell.cell_type !== "code") {
+        continue;
+      }
+
+      const notebookMeta = this.extractNotebookTrillMetadata(cell);
+      if (!notebookMeta) {
+        continue;
+      }
+
+      const nodeId = notebookMeta.id;
+      if (!nodeId) {
+        continue;
+      }
+
+      const serializedConnections = [
+        ...(notebookMeta.outputs ?? []),
+        ...(notebookMeta.inputs ?? []),
+      ];
+
+      if (serializedConnections.length > 0) {
+        sawExplicitConnections = true;
+      }
+
+      for (const connection of serializedConnections) {
+        const edge = this.normalizeNotebookConnection(connection);
+        if (!edge) {
+          continue;
+        }
+
+        const key = this.edgeKey(edge);
+        if (!explicitEdges.has(key)) {
+          explicitEdges.set(key, edge);
+        }
+      }
+    }
+
+    if (sawExplicitConnections) {
+      edges.push(...explicitEdges.values());
+    }
+
     const targetInputCount: Record<string, number> = {};
-    const edgeKeys = new Set<string>();
+    if (!sawExplicitConnections) {
+      const edgeKeys = new Set<string>();
 
-    for (const node of nodes) {
-      const inputs = nodeInputs[node.id] ?? [];
-      for (const inputVar of inputs) {
-        const sourceNodeId = producedByVar[inputVar];
-        if (!sourceNodeId || sourceNodeId === node.id) {
-          continue;
+      for (const node of nodes) {
+        const inputs = nodeInputs[node.id] ?? [];
+        for (const inputVar of inputs) {
+          const sourceNodeId = producedByVar[inputVar];
+          if (!sourceNodeId || sourceNodeId === node.id) {
+            continue;
+          }
+
+          const edgeKey = `${sourceNodeId}->${node.id}::${inputVar}`;
+          if (edgeKeys.has(edgeKey)) {
+            continue;
+          }
+          edgeKeys.add(edgeKey);
+
+          let targetHandle = "in";
+          if (node.type === NodeType.MERGE_FLOW) {
+            const count = targetInputCount[node.id] ?? 0;
+            targetHandle = `in_${count}`;
+            targetInputCount[node.id] = count + 1;
+          }
+
+          edges.push({
+            id: `edge_${uuid()}`,
+            source: sourceNodeId,
+            sourceHandle: "out",
+            target: node.id,
+            targetHandle,
+          });
         }
-
-        const edgeKey = `${sourceNodeId}->${node.id}::${inputVar}`;
-        if (edgeKeys.has(edgeKey)) {
-          continue;
-        }
-        edgeKeys.add(edgeKey);
-
-        let targetHandle = "in";
-        if (node.type === NodeType.MERGE_FLOW) {
-          const count = targetInputCount[node.id] ?? 0;
-          targetHandle = `in_${count}`;
-          targetInputCount[node.id] = count + 1;
-        }
-
-        edges.push({
-          id: `edge_${uuid()}`,
-          source: sourceNodeId,
-          sourceHandle: "out",
-          target: node.id,
-          targetHandle,
-        });
       }
     }
 
@@ -273,12 +340,15 @@ export class TrillNotebookConverter {
 
       const sourceInfo = this.executionGraph[source];
       const targetInfo = this.executionGraph[target];
+      const bidirectional = this.isBidirectionalEdge(edge);
 
-      targetInfo.dependencies.add(source);
-      sourceInfo.dependents.add(target);
+      if (!bidirectional) {
+        targetInfo.dependencies.add(source);
+        sourceInfo.dependents.add(target);
+      }
 
-      const targetHandle = edge.targetHandle ?? "in";
-      const sourceHandle = edge.sourceHandle ?? "out";
+      const targetHandle = edge.targetHandle ?? (bidirectional ? "in/out" : "in");
+      const sourceHandle = edge.sourceHandle ?? (bidirectional ? "in/out" : "out");
 
       if (!targetInfo.inputs[targetHandle]) {
         targetInfo.inputs[targetHandle] = [];
@@ -287,7 +357,7 @@ export class TrillNotebookConverter {
       targetInfo.inputs[targetHandle].push({
         source,
         sourceHandle,
-        bidirectional: false,
+        bidirectional,
       });
 
       if (!sourceInfo.outputs[sourceHandle]) {
@@ -297,7 +367,7 @@ export class TrillNotebookConverter {
       sourceInfo.outputs[sourceHandle].push({
         target,
         targetHandle,
-        bidirectional: false,
+        bidirectional,
       });
     }
   }
@@ -362,6 +432,7 @@ export class TrillNotebookConverter {
     }
 
     const nodeMeta = `__trill_node__ = {\n    "id": "${nodeId}",\n    "type": "${nodeType}",\n    "in": "${node.in ?? "DEFAULT"}",\n    "out": "${node.out ?? "DEFAULT"}"\n}\n\n`;
+    const notebookMeta = this.buildNotebookTrillMetadata(nodeId, nodeType, node);
 
     return {
       cell_type: "code",
@@ -373,6 +444,7 @@ export class TrillNotebookConverter {
         nodeType,
         in: node.in ?? "DEFAULT",
         out: node.out ?? "DEFAULT",
+        trill: notebookMeta,
       },
     };
   }
@@ -472,21 +544,125 @@ export class TrillNotebookConverter {
   }
 
   private generateUtkVisualizationCode(node: TrillNode, nodeInfo: GraphNodeInfo): string {
-    const code = this.ensureUtkImport(node.content ?? "");
     const inputs = this.getInputVariables(nodeInfo);
     const outputs = this.getOutputVariables(node.id);
+    const containerId = `utk-container-${node.id.substring(0, 8)}`;
 
+    // Build input data handling
     const inputLines = inputs.map((value, index) => `input_${index} = ${value}`).join("\n");
-
-    let argBlock = "";
+    let dataVar = "None";
     if (inputs.length === 1) {
-      argBlock = "arg = input_0\n";
+      dataVar = "input_0";
     } else if (inputs.length > 1) {
-      argBlock = `arg = [${inputs.map((_, index) => `input_${index}`).join(", ")}]\n`;
+      dataVar = `[${inputs.map((_, index) => `input_${index}`).join(", ")}]`;
     }
 
-    const body = `${inputLines}\n${argBlock}\n${code}\n`;
-    return this.wrapNodeExecution(body, outputs);
+    // Generate the enhanced UTK notebook code
+    const utkCode = this.generateUtkNotebookCode(node, containerId, dataVar);
+    const body = `${inputLines}\n\n${utkCode}`;
+    return this.wrapNodeExecution(body, outputs, containerId);
+  }
+
+  private generateUtkNotebookCode(node: TrillNode, containerId: string, dataVar: string): string {
+    // Set up UTK with serverless mode and notebook environment
+    const utkSetup = `
+# Configure UTK for serverless/notebook environment
+import utk
+import json
+from IPython.display import HTML, Javascript, display
+
+utk.Environment.serverless = True
+
+# Create grammar structure
+grammar = {
+    "components": [{
+        "id": "notebook_map",
+        "json": {
+            "camera": {
+                "wEye": [0, 0, 1000],
+                "wLookAt": [0, 0, 0],
+                "wUp": [0, 1, 0]
+            },
+            "grid": {"width": 12, "height": 4},
+            "knots": [],
+            "map_style": [],
+            "widgets": [{
+                "type": "TOGGLE_KNOT"
+            }]
+        },
+        "position": {"x": 0, "y": 0, "width": 12, "height": 4}
+    }],
+    "grid": {"width": 12, "height": 4},
+    "knots": []
+}
+
+# If content has grammar, parse and merge it
+grammar_content = """${node.content ?? "{}"}""".strip()
+if grammar_content and grammar_content != "{}":
+    try:
+        parsed_grammar = json.loads(grammar_content)
+        # Merge parsed grammar with our structure
+        if "components" in parsed_grammar:
+            grammar["components"][0]["json"].update(parsed_grammar.get("json", {}))
+        if "knots" in parsed_grammar:
+            grammar["knots"] = parsed_grammar["knots"]
+    except json.JSONDecodeError:
+        pass
+
+# Load geospatial data if available
+geospatial_data = None
+if ${dataVar} is not None:
+    data_input = ${dataVar}
+    # Handle multi-input case
+    if isinstance(data_input, list):
+        data_input = data_input[0] if data_input else None
+    
+    if data_input is not None:
+        # Check if it's a geodataframe
+        try:
+            import geopandas as gpd
+            if isinstance(data_input, gpd.GeoDataFrame):
+                # Convert to GeoJSON
+                geojson_data = json.loads(data_input.to_json())
+                geospatial_data = utk.physical_from_geojson(geojson_data)
+                
+                # Add layers to grammar
+                if geospatial_data and "components" in grammar:
+                    if "layers" not in grammar["components"][0]["json"]:
+                        grammar["components"][0]["json"]["layers"] = []
+                    # Add layer for the geospatial data
+                    grammar["components"][0]["json"]["layers"].append({
+                        "type": "geospatial",
+                        "data": geospatial_data.to_dict() if hasattr(geospatial_data, 'to_dict') else geospatial_data
+                    })
+        except Exception as e:
+            pass
+
+# Create HTML container
+html_container = f'<div id="${containerId}" style="width: 100%; height: 600px; border: 1px solid #ccc;"></div>'
+display(HTML(html_container))
+
+# Initialize UTK in browser
+js_initialization = f"""
+require(['utk'], function(utk) {{
+    utk.Environment.serverless = true;
+    const container = document.getElementById('${containerId}');
+    const grammar = {json.dumps(grammar)};
+    
+    try {{
+        const interpreter = new utk.GrammarInterpreter('notebook', grammar, container);
+        // Store reference for potential interactions
+        window._utk_interpreter_${node.id.substring(0, 8)} = interpreter;
+    }} catch(e) {{
+        console.error('UTK initialization error:', e);
+        container.innerHTML = '<div style="color: red; padding: 20px;">Error initializing UTK visualization</div>';
+    }}
+}});
+"""
+display(Javascript(js_initialization))
+`;
+
+    return utkSetup;
   }
 
   private inferNodeType(code: string): NodeType {
@@ -706,6 +882,156 @@ export class TrillNotebookConverter {
     } catch {
       return null;
     }
+  }
+
+  private extractNotebookTrillMetadata(cell: Record<string, unknown>): NotebookTrillMetadata | null {
+    const metadata = cell.metadata as Record<string, unknown> | undefined;
+    if (!metadata) {
+      return null;
+    }
+
+    const trill = metadata.trill as Record<string, unknown> | undefined;
+    const source = trill ?? metadata;
+
+    const parseConnections = (value: unknown): NotebookTrillConnection[] => {
+      if (!Array.isArray(value)) {
+        return [];
+      }
+
+      return value
+        .map((entry) => entry as Record<string, unknown>)
+        .filter((entry): entry is Record<string, unknown> => !!entry)
+        .map((entry) => ({
+          id: typeof entry.id === "string" ? entry.id : undefined,
+          source: typeof entry.source === "string" ? entry.source : "",
+          target: typeof entry.target === "string" ? entry.target : "",
+          sourceHandle: typeof entry.sourceHandle === "string" ? entry.sourceHandle : undefined,
+          targetHandle: typeof entry.targetHandle === "string" ? entry.targetHandle : undefined,
+          bidirectional: typeof entry.bidirectional === "boolean" ? entry.bidirectional : undefined,
+          type: typeof entry.type === "string" ? entry.type : undefined,
+        }))
+        .filter((entry) => !!entry.source && !!entry.target);
+    };
+
+    const nodeId =
+      typeof source.nodeId === "string"
+        ? source.nodeId
+        : typeof source.id === "string"
+          ? source.id
+          : undefined;
+
+    const nodeType =
+      typeof source.nodeType === "string"
+        ? source.nodeType
+        : typeof source.type === "string"
+          ? source.type
+          : undefined;
+
+    const nodeIn =
+      typeof source.in === "string"
+        ? source.in
+        : undefined;
+
+    const nodeOut =
+      typeof source.out === "string"
+        ? source.out
+        : undefined;
+
+    const inputs = parseConnections(source.inputs);
+    const outputs = parseConnections(source.outputs);
+
+    if (!nodeId && !nodeType && inputs.length === 0 && outputs.length === 0) {
+      return null;
+    }
+
+    return {
+      id: nodeId,
+      type: nodeType,
+      in: nodeIn,
+      out: nodeOut,
+      inputs,
+      outputs,
+    };
+  }
+
+  private buildNotebookTrillMetadata(nodeId: string, nodeType: string, node: TrillNode): NotebookTrillMetadata {
+    const nodeInfo = this.executionGraph[nodeId];
+    const inputs: NotebookTrillConnection[] = [];
+    const outputs: NotebookTrillConnection[] = [];
+
+    for (const [targetHandle, connections] of Object.entries(nodeInfo.inputs)) {
+      for (const connection of connections) {
+        inputs.push({
+          source: connection.source,
+          target: nodeId,
+          sourceHandle: connection.sourceHandle,
+          targetHandle,
+          bidirectional: connection.bidirectional,
+          type: connection.bidirectional ? "Interaction" : undefined,
+        });
+      }
+    }
+
+    for (const [sourceHandle, connections] of Object.entries(nodeInfo.outputs)) {
+      for (const connection of connections) {
+        outputs.push({
+          source: nodeId,
+          target: connection.target,
+          sourceHandle,
+          targetHandle: connection.targetHandle,
+          bidirectional: connection.bidirectional,
+          type: connection.bidirectional ? "Interaction" : undefined,
+        });
+      }
+    }
+
+    return {
+      id: nodeId,
+      type: nodeType,
+      in: node.in ?? "DEFAULT",
+      out: node.out ?? "DEFAULT",
+      inputs,
+      outputs,
+    };
+  }
+
+  private normalizeNotebookConnection(connection: NotebookTrillConnection): TrillEdge | null {
+    if (!connection.source || !connection.target) {
+      return null;
+    }
+
+    const bidirectional =
+      connection.bidirectional === true ||
+      connection.type === "Interaction" ||
+      connection.sourceHandle === "in/out" ||
+      connection.targetHandle === "in/out";
+
+    return {
+      id: connection.id ?? `edge_${uuid()}`,
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: connection.sourceHandle ?? (bidirectional ? "in/out" : "out"),
+      targetHandle: connection.targetHandle ?? (bidirectional ? "in/out" : "in"),
+      type: bidirectional ? "Interaction" : connection.type,
+    };
+  }
+
+  private edgeKey(edge: TrillEdge): string {
+    return [
+      edge.source,
+      edge.target,
+      edge.sourceHandle ?? "",
+      edge.targetHandle ?? "",
+      edge.type ?? "",
+    ].join("::");
+  }
+
+  private isBidirectionalEdge(edge: TrillEdge): boolean {
+    return (
+      edge.type === "Interaction" ||
+      edge.sourceHandle === "in/out" ||
+      edge.targetHandle === "in/out"
+    );
   }
 
   private removeTrillVariable(code: string): string {
