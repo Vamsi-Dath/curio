@@ -13,6 +13,8 @@ export enum NodeType {
   MERGE_FLOW = "MERGE_FLOW",
   COMMENTS = "COMMENTS",
   JS_COMPUTATION = "JS_COMPUTATION",
+  AUTK_MAP = "AUTK_MAP",
+  AUTK_PLOT = "AUTK_PLOT",
 }
 
 export enum EdgeType {

@@ -184,6 +184,8 @@ function CodeEditor({
                     fontFamily: "'Source Code Pro', Consolas, 'Courier New', monospace",
                     whiteSpace: "pre-wrap",
                     color: output.code === "error" ? "#c0392b" : "#333",
+                    userSelect: "text",
+                    cursor: "text",
                 }}
             >
                 <span style={{ color: "#303F9F", fontWeight: "bold", marginRight: "6px" }}>{execLabel}</span>

@@ -22,6 +22,15 @@ module.exports = {
   },
   devServer: {
     historyApiFallback: true,
+    client: {
+      overlay: {
+        // ResizeObserver loop warnings are benign browser notifications fired when
+        // a resize callback cannot deliver all updates in a single animation frame.
+        // Webpack-dev-server incorrectly surfaces them as hard errors via window.onerror.
+        runtimeErrors: (err) =>
+          err?.message !== 'ResizeObserver loop completed with undelivered notifications.',
+      },
+    },
   },
   resolve: {
     extensions: [".tsx", ".ts", ".js"],

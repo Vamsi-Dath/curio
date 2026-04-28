@@ -14,6 +14,7 @@ import {
   faChartLine,
   faCopy,
   faRectangleList,
+  faMap,
 } from '@fortawesome/free-solid-svg-icons';
 import { faJs } from '@fortawesome/free-brands-svg-icons';
 
@@ -34,6 +35,8 @@ import {
   useMergeFlowLifecycle,
   useDataPoolLifecycle,
   useDataSummaryLifecycle,
+  useAutkMapLifecycle,
+  useAutkPlotLifecycle,
 } from '../adapters/node';
 
 const ALL_TYPES = [
@@ -345,6 +348,54 @@ registerNode({
     outputIconType: '1',
     showTemplateModal: false,
     useLifecycle: useSimpleVisLifecycle,
+  },
+});
+
+registerNode({
+  id: NodeType.AUTK_PLOT,
+  category: 'vis_simple',
+  label: 'AutkPlot',
+  icon: faChartLine,
+  inputPorts: [{ types: [SupportedType.LIST, SupportedType.JSON, SupportedType.GEODATAFRAME, SupportedType.DATAFRAME], cardinality: '1' }],
+  outputPorts: [],
+  editor: 'code',
+  inPalette: true,
+  paletteOrder: 10,
+  description: 'Renders charts using autk-plot. Supports scatterplot, barchart, linechart, heatmatrix, parallel-coordinates, and table. Edit the code to configure the chart type and data mapping.',
+  hasCode: true,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: inputOnly(),
+    editor: { code: true, grammar: false, widgets: false },
+    container: { handleType: 'in' },
+    inputIconType: '1',
+    showTemplateModal: false,
+    useLifecycle: useAutkPlotLifecycle,
+  },
+});
+
+registerNode({
+  id: NodeType.AUTK_MAP,
+  category: 'vis_simple',
+  label: 'AutkMap',
+  icon: faMap,
+  inputPorts: [{ types: [SupportedType.LIST, SupportedType.JSON], cardinality: '1' }],
+  outputPorts: [],
+  editor: 'code',
+  inPalette: true,
+  paletteOrder: 9,
+  description: 'Renders urban 3D map layers using autk-map. Receives a layer array from a JS Computation node and renders it to a canvas. Edit the code to customize the rendering.',
+  hasCode: true,
+  hasWidgets: false,
+  hasGrammar: false,
+  adapter: {
+    handles: inputOnly(),
+    editor: { code: true, grammar: false, widgets: false },
+    container: { handleType: 'in' },
+    inputIconType: '1',
+    showTemplateModal: false,
+    useLifecycle: useAutkMapLifecycle,
   },
 });
 

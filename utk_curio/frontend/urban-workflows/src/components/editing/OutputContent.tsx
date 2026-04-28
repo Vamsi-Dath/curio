@@ -64,7 +64,7 @@ function OutputContent({ output }: { output: any; }) {
         <Tab eventKey="0" title="Output">
           <div style={{ padding: "15px" }}>
             <h6>Output</h6>
-            <div style={{ fontSize: "12px", color: "#666" }}>{tabData[0]?.content || "No output available."}</div>
+            <div style={{ fontSize: "12px", color: "#666", userSelect: "text" }}>{tabData[0]?.content || "No output available."}</div>
           </div>
         </Tab>
         <Tab eventKey="1" title="Error">
@@ -112,7 +112,7 @@ function OutputContent({ output }: { output: any; }) {
                       }}
                     >
                       <div style={{ fontWeight: 600 }}>Traceback:</div>
-                      <pre style={{ margin: 0, fontSize: "1em", background: "none", color: "inherit" }}>{tabData[1].content.traceback}</pre>
+                      <pre style={{ margin: 0, fontSize: "1em", background: "none", color: "inherit", userSelect: "text" }}>{tabData[1].content.traceback}</pre>
                     </div>
                   )}
                 </div>
@@ -132,7 +132,7 @@ function OutputContent({ output }: { output: any; }) {
             {tabData[2]?.content?.traceback && (
               <div style={{ background: "#e2e3e5", color: "#383d41", padding: "10px", borderRadius: "5px" }}>
                 <span role="img" aria-label="Traceback">📄 Traceback:</span><br />
-                <pre style={{ margin: 0, fontSize: "1em", fontFamily: "monospace" }}>{tabData[2].content.traceback}</pre>
+                <pre style={{ margin: 0, fontSize: "1em", fontFamily: "monospace", userSelect: "text" }}>{tabData[2].content.traceback}</pre>
               </div>
             )}
             {!tabData[2]?.content?.friendly && !tabData[2]?.content?.traceback && (
