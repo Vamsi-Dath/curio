@@ -13,7 +13,7 @@ name: Deploy
 #   5. On the server, set up two side-by-side checkouts:
 #        sudo -iu deploy
 #        git clone https://github.com/<you>/curio.git /srv/curio        # stable
-#        git clone https://github.com/<you>/curio.git /srv/curio-test   # test
+#        git clone https://github.com/<you>/curio.git /srv/curio-dev   # test
 #
 #      And a per-checkout .env so the two stacks don't collide on
 #      container names or ports:
@@ -24,8 +24,8 @@ name: Deploy
 #        CURIO_PORT_5002=5002
 #        CURIO_PORT_8080=8080
 #
-#        # /srv/curio-test/.env
-#        CURIO_CONTAINER_NAME=curio-test
+#        # /srv/curio-dev/.env
+#        CURIO_CONTAINER_NAME=curio-dev
 #        CURIO_PORT_2000=2010
 #        CURIO_PORT_5002=5012
 #        CURIO_PORT_8080=8090
@@ -46,13 +46,13 @@ on:
         default: 'main'
 
 jobs:
-  deploy-test:
+  deploy-dev:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     concurrency:
-      group: deploy-test
+      group: deploy-dev
       cancel-in-progress: false
-    environment: test
+    environment: dev
     steps:
       - name: Connect to tailnet
         uses: tailscale/github-action@v3
@@ -68,18 +68,18 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H utk >> ~/.ssh/known_hosts
 
-      - name: Deploy ${{ github.ref_name }} to curio-test stack
+      - name: Deploy ${{ github.ref_name }} to curio-dev stack
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
             bash -s "${{ github.ref_name }}" <<'EOF'
           set -euo pipefail
           branch="$1"
-          cd /srv/curio-test
+          cd /srv/curio-dev
           git fetch --prune origin
           git checkout "$branch"
           git reset --hard "origin/$branch"
-          docker compose -p curio-test down --remove-orphans 2>/dev/null || true
-          docker compose -p curio-test up -d --build
+          docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
+          docker compose -p curio-dev up -d --build
           EOF
 
   deploy-stable:
