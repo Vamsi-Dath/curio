@@ -47,7 +47,9 @@ on:
 
 jobs:
   deploy-dev:
-    if: github.event_name == 'push'
+    # Runs on every push (matching the paths filter) AND alongside deploy-stable
+    # whenever the workflow is manually dispatched, so dev tracks stable.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-dev
@@ -68,16 +70,15 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H utk >> ~/.ssh/known_hosts
 
-      - name: Deploy ${{ github.ref_name }} to curio-dev stack
+      - name: Deploy ${{ inputs.ref || github.ref_name }} to curio-dev stack
         run: |
           ssh -i ~/.ssh/id_ed25519 deploy@utk \
-            bash -s "${{ github.ref_name }}" <<'EOF'
+            bash -s "${{ inputs.ref || github.ref_name }}" <<'EOF'
           set -euo pipefail
-          branch="$1"
+          ref="$1"
           cd /srv/curio-dev
-          git fetch --prune origin
-          git checkout "$branch"
-          git reset --hard "origin/$branch"
+          git fetch --prune --tags origin
+          git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
