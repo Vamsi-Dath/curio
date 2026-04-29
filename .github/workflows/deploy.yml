@@ -85,24 +85,6 @@ jobs:
           docker compose -p curio-dev up -d --build
           EOF
 
-      - name: Notify Discord
-        if: always()
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          STATUS:  ${{ job.status }}
-          STACK:   dev
-          REF:     ${{ inputs.ref || github.ref_name }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          if [ -z "$WEBHOOK" ]; then
-            echo "DISCORD_WEBHOOK secret not set; skipping notification."
-            exit 0
-          fi
-          if [ "$STATUS" = "success" ]; then color=3066993; else color=15158332; fi
-          curl -fsS -X POST "$WEBHOOK" \
-            -H 'Content-Type: application/json' \
-            -d "{\"embeds\":[{\"title\":\"$STACK deploy — $STATUS\",\"description\":\"Deployed \\`$REF\\` to **$STACK**\",\"url\":\"$RUN_URL\",\"color\":$color}]}"
-
   deploy-stable:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -139,21 +121,3 @@ jobs:
           docker compose -p curio down --remove-orphans 2>/dev/null || true
           docker compose -p curio up -d --build
           EOF
-
-      - name: Notify Discord
-        if: always()
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          STATUS:  ${{ job.status }}
-          STACK:   stable
-          REF:     ${{ inputs.ref }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          if [ -z "$WEBHOOK" ]; then
-            echo "DISCORD_WEBHOOK secret not set; skipping notification."
-            exit 0
-          fi
-          if [ "$STATUS" = "success" ]; then color=3066993; else color=15158332; fi
-          curl -fsS -X POST "$WEBHOOK" \
-            -H 'Content-Type: application/json' \
-            -d "{\"embeds\":[{\"title\":\"$STACK deploy — $STATUS\",\"description\":\"Deployed \\`$REF\\` to **$STACK**\",\"url\":\"$RUN_URL\",\"color\":$color}]}"
