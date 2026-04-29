@@ -19,3 +19,5 @@ services:
       - ./data:/app/data
       # Share sandbox .data files with the host so Playwright (runs on host in CI) can read them
       - ./.curio:/app/.curio
+      # Persist the Flask SQLite DB (users, projects, sessions) across container recreates
+      - ./instance:/app/instance
