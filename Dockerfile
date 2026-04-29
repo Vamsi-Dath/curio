@@ -27,6 +27,14 @@ FROM node:20-bookworm-slim AS frontend_builder
 WORKDIR /src
 COPY utk_curio/frontend/ /src/utk_curio/frontend/
 
+# BACKEND_URL is baked into the JS bundle at build time. Passed in via
+# docker compose build args (see docker-compose.yml).
+ARG BACKEND_URL
+RUN if [ -n "$BACKEND_URL" ]; then \
+      sed -i "s|^BACKEND_URL=.*|BACKEND_URL=$BACKEND_URL|" \
+        /src/utk_curio/frontend/urban-workflows/.env; \
+    fi
+
 WORKDIR /src/utk_curio/frontend/utk-workflow/src/utk-ts
 RUN npm install && npm run build
 
