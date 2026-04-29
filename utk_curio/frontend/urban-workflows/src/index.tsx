@@ -113,7 +113,7 @@ const ProjectsRoute: React.FC = () => {
 
 const App: React.FC = () => {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={(process.env.PUBLIC_PATH || "/").replace(/\/$/, "") || undefined}>
       <BackendHealthBanner>
         <ToastProvider>
           <ReactFlowProvider>
