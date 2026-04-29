@@ -3,15 +3,15 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: curio
+    container_name: ${CURIO_CONTAINER_NAME:-curio}
     tty: true
     stdin_open: true
     environment:
       - PYTHONUNBUFFERED=1
     ports:
-      - "2000:2000"
-      - "5002:5002"
-      - "8080:8080"
+      - "${CURIO_PORT_2000:-2000}:2000"
+      - "${CURIO_PORT_5002:-5002}:5002"
+      - "${CURIO_PORT_8080:-8080}:8080"
     volumes:
       - ./templates:/app/templates
       - ./data:/app/data
