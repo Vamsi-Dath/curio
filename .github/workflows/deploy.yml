@@ -79,6 +79,7 @@ jobs:
           git checkout "$branch"
           git reset --hard "origin/$branch"
           mkdir -p instance .curio
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
           docker compose -p curio-dev up -d --build
           EOF
@@ -115,6 +116,7 @@ jobs:
           git fetch --prune --tags origin
           git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
           mkdir -p instance .curio
+          export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
           docker compose -p curio down --remove-orphans 2>/dev/null || true
           docker compose -p curio up -d --build
           EOF
