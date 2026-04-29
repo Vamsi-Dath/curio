@@ -145,7 +145,11 @@ const App: React.FC = () => {
                     />
                     <Route
                       path="/"
-                      element={<HomeRedirect />}
+                      element={
+                        <RequireAuth>
+                          <HomeRedirect />
+                        </RequireAuth>
+                      }
                     />
                   </Routes>
                 </UserProvider>
