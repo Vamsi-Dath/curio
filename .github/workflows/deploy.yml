@@ -81,6 +81,8 @@ jobs:
           git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          export BACKEND_URL=https://utk.evl.uic.edu/curio-dev/api
+          export PUBLIC_PATH=/curio-dev/
           docker compose -p curio-dev down --remove-orphans 2>/dev/null || true
           docker compose -p curio-dev up -d --build
           EOF
@@ -118,6 +120,8 @@ jobs:
           git checkout --detach "$ref" 2>/dev/null || git checkout "$ref"
           mkdir -p instance .curio
           export COMPOSE_FILE=docker-compose.yml:docker-compose.deploy.yml
+          export BACKEND_URL=https://utk.evl.uic.edu/curio/api
+          export PUBLIC_PATH=/curio/
           docker compose -p curio down --remove-orphans 2>/dev/null || true
           docker compose -p curio up -d --build
           EOF
